@@ -193,7 +193,7 @@ function FileToolbar({ onShare, onDownload, onDelete }){
   );
 }
 
-function UploadBox({ emptyLabel, accept, file, onPick, onShare, onDownload, onClear }){
+function UploadBox({ emptyLabel, accept, file, onPick, onShare, onDownload, onClear, onOpen }){
   const inputRef = useRef(null);
   const url = useFilePreview(file);
   const isImg = (file?.type || '').startsWith('image/');
@@ -213,7 +213,11 @@ function UploadBox({ emptyLabel, accept, file, onPick, onShare, onDownload, onCl
   }
   return (
     <div className="h-28 border rounded-lg bg-white p-2 flex flex-col">
-      <div className="flex-1 overflow-hidden rounded border bg-gray-50 flex items-center justify-center">
+      <div
+  className="flex-1 overflow-hidden rounded border bg-gray-50 flex items-center justify-center cursor-pointer"
+  onClick={()=> onOpen?.(file)}
+  title="Tap to view"
+/>
         {url ? (
           isImg ? <img src={url} alt={file.name} className="object-contain w-full h-full"/> : <iframe key={file?.id || url} src={url} title="PDF preview" className="w-full h-full rounded" />
         ) : (
@@ -501,30 +505,39 @@ function MyInfo({ profile, saveProfile }){
 {selected ? (
   <>
     <div className="grid grid-cols-2 gap-2">
-      <UploadBox
-        emptyLabel="Add PDF"
-        accept="application/pdf"
-        file={selected.resume}
-        onPick={(ref)=>updateKid(selected.id,{resume:ref})}
-        onShare={()=>selected.resume && shareRef(selected.resume,'resume')}
-        onDownload={()=>selected.resume && downloadRef(selected.resume)}
-        onClear={()=>{
-          if (selected?.resume) deleteFileRef(selected.resume);
-          updateKid(selected.id,{resume:null});
-        }}
-      />
-      <UploadBox
-        emptyLabel="Add photo"
-        accept="image/*"
-        file={selected.photo}
-        onPick={(ref)=>updateKid(selected.id,{photo:ref})}
-        onShare={()=>selected.photo && shareRef(selected.photo,'photo')}
-        onDownload={()=>selected.photo && downloadRef(selected.photo)}
-        onClear={()=>{
-          if (selected?.photo) deleteFileRef(selected.photo);
-          updateKid(selected.id,{photo:null});
-        }}
-      />
+   <UploadBox
+  emptyLabel="Add PDF"
+  accept="application/pdf"
+  file={selected.resume}
+  onPick={(ref)=>{ updateKid(selected.id,{resume:ref}); setViewerFile(ref); }}
+  onShare={()=>selected.resume && shareRef(selected.resume,'resume')}
+  onDownload={()=>selected.resume && downloadRef(selected.resume)}
+  onClear={()=>{
+    if (selected.resume) deleteFileRef(selected.resume);
+    updateKid(selected.id,{resume:null});
+  }}
+  onOpen={(ref)=> setViewerFile(ref)}
+/>
+
+<UploadBox
+  emptyLabel="Add photo"
+  accept="image/*"
+  file={selected.photo}
+  onPick={(ref)=>{ updateKid(selected.id,{photo:ref}); setViewerFile(ref); }}
+  onShare={()=>selected.photo && shareRef(selected.photo,'photo')}
+  onDownload={()=>selected.photo && downloadRef(selected.photo)}
+  onClear={()=>{
+    if (selected.photo) deleteFileRef(selected.photo);
+    updateKid(selected.id,{photo:null});
+  }}
+  onOpen={(ref)=> setViewerFile(ref)}
+/>
+
+
+{viewerFile && (
+  <Viewer fileRef={viewerFile} onClose={() => setViewerFile(null)} />
+)}
+
     </div>
 
     <div className="mt-2">
@@ -571,12 +584,62 @@ function MyInfo({ profile, saveProfile }){
 </div>
 );
 }
+function Viewer({ fileRef, onClose }) {
+  // reuse existing hook in this file
+  const url = useFilePreview(fileRef);
+
+  // close on ESC
+  useEffect(() => {
+    const h = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  }, [onClose]);
+
+  if (!fileRef) return null;
+
+  const isImg = (fileRef?.type || '').startsWith('image/');
+
+  return (
+    <div
+      className="fixed inset-0 z-[1000] bg-black/80 flex items-center justify-center p-4"
+      onClick={onClose}
+      role="dialog"
+      aria-label="Viewer"
+    >
+      <div
+        className="max-w-[1000px] w-full max-h-[90vh] bg-white rounded-lg overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {url ? (
+          isImg ? (
+            <img src={url} alt={fileRef?.name || 'image'} className="w-full h-[85vh] object-contain" />
+          ) : (
+            <iframe
+              key={fileRef?.id || url}
+              src={url}
+              title="Preview"
+              className="w-full h-[85vh]"
+            />
+          )
+        ) : (
+          <div className="p-6 text-center text-sm text-gray-500">Loading…</div>
+        )}
+        <div className="p-2 text-right">
+          <button type="button" className="px-3 py-1 rounded border text-sm" onClick={onClose}>
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ===== App (glue) =====
 export default function App(){
   const [tab,setTab]=useState('prospects');
   const [profile,setProfile]=useState(null);
   const [prospects,setProspects]=useState([]);
+const [viewerFile, setViewerFile] = useState(null);
 const applyingRemoteRef = useRef(false);
 const lastAppliedRef = useRef(0);
   const [activeKidId, setActiveKidId] = useState('');
