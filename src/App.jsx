@@ -411,7 +411,7 @@ function Prospects({ prospects, setProspects, profile, saveProfile, activeKidId,
       </div>
 
       {/* cards grid */}
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-1 gap-2 w-full">
         {filtered.map(p=> (
           <div
   key={p.id}
