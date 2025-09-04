@@ -193,38 +193,83 @@ function FileToolbar({ onShare, onDownload, onDelete }){
   );
 }
 
-function UploadBox({ emptyLabel, accept, file, onPick, onShare, onDownload, onClear, onOpen }){
+function UploadBox({
+  emptyLabel,
+  accept,
+  file,
+  onPick,
+  onShare,
+  onDownload,
+  onClear,
+  onOpen,
+}) {
   const inputRef = useRef(null);
   const url = useFilePreview(file);
-  const isImg = (file?.type || '').startsWith('image/');
+  const isImg = (file?.type || "").startsWith("image/");
+
   const handleChange = async (e) => {
     const f = e.target.files?.[0];
-    if(f){ const ref = await attachFile(f); if(ref) onPick(ref); }
-    e.target.value='';
+    if (f) {
+      const ref = await attachFile(f);
+      if (ref) onPick?.(ref);
+    }
+    e.target.value = "";
   };
+
+  // Empty state: show picker button
   if (!file) {
     return (
-      <button type="button" onClick={()=>inputRef.current?.click()} className="h-28 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 flex flex-col items-center justify-center">
+      <button
+        type="button"
+        onClick={() => inputRef.current?.click()}
+        className="h-28 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 flex flex-col items-center justify-center"
+      >
         <div className="text-3xl leading-none text-gray-400">+</div>
         <div className="text-xs text-gray-500 mt-1">{emptyLabel}</div>
-        <input ref={inputRef} type="file" accept={accept} className="hidden" onChange={handleChange} />
+        <input
+          ref={inputRef}
+          type="file"
+          accept={accept}
+          className="hidden"
+          onChange={handleChange}
+        />
       </button>
     );
   }
+
+  // Has file: show preview card + toolbar
   return (
     <div className="h-28 border rounded-lg bg-white p-2 flex flex-col">
       <div
-  className="flex-1 overflow-hidden rounded border bg-gray-50 flex items-center justify-center cursor-pointer"
-  onClick={()=> onOpen?.(file)}
-  title="Tap to view"
-/>
+        className="flex-1 overflow-hidden rounded border bg-gray-50 flex items-center justify-center cursor-pointer"
+        onClick={() => onOpen?.(file)}
+        title="Tap to view"
+      >
         {url ? (
-          isImg ? <img src={url} alt={file.name} className="object-contain w-full h-full"/> : <iframe key={file?.id || url} src={url} title="PDF preview" className="w-full h-full rounded" />
+          isImg ? (
+            <img
+              src={url}
+              alt={file.name}
+              className="object-contain w-full h-full"
+            />
+          ) : (
+            <iframe
+              key={file?.id || url}
+              src={url}
+              title="Preview"
+              className="w-full h-full rounded"
+            />
+          )
         ) : (
           <div className="text-xs text-gray-400">{file.name}</div>
         )}
       </div>
-      <FileToolbar onShare={onShare} onDownload={onDownload} onDelete={onClear} />
+
+      <FileToolbar
+        onShare={onShare}
+        onDownload={onDownload}
+        onDelete={onClear}
+      />
     </div>
   );
 }
