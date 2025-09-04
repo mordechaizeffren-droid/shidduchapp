@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import localforage from "localforage";
-import { fetchRoom, saveRoom, subscribeRoom } from "./lib/sync";
+import { fetchRoom, saveRoom, subscribeRoom } from "./lib/sync"; 
 
 // =============================================================================
 // Shidduch Organizer — Single File App (all features, compact)
@@ -413,7 +413,10 @@ function Prospects({ prospects, setProspects, profile, saveProfile, activeKidId,
       {/* cards grid */}
       <div className="grid grid-cols-2 gap-2">
         {filtered.map(p=> (
-          <div key={p.id} className="border rounded bg-white shadow-sm" onDragOver={(e)=>e.preventDefault()} onDrop={async(e)=>{ e.preventDefault(); await onDropFiles(p.id, e.dataTransfer?.files||null); }}>
+          <div
+  key={p.id}
+  className={`border rounded bg-white shadow-sm ${expanded[p.id] ? 'p-4' : 'p-2'}`}
+ onDragOver={(e)=>e.preventDefault()} onDrop={async(e)=>{ e.preventDefault(); await onDropFiles(p.id, e.dataTransfer?.files||null); }}>
             <div className="p-2 flex items-center gap-2">
               <EditableText value={p.fullName} onChange={(v)=>updateP(p.id,{fullName:v||'Untitled'})} className="font-medium truncate flex-1" inputClass="font-medium truncate flex-1 border rounded px-2 py-1" />
               {p.city ? <span className="text-xs text-gray-500 truncate max-w-[6rem]">{p.city}</span> : null}
@@ -430,7 +433,7 @@ function Prospects({ prospects, setProspects, profile, saveProfile, activeKidId,
                   <div><div className="text-xs mb-1">Suggested by</div><InlinePill label={p.sourceName||''} placeholder="" onEdit={(v)=>updateP(p.id,{sourceName:v})} full /></div>
                   <div><div className="text-xs mb-1">Status</div><TrustSelect value={p.sourceTrust||''} onChange={(v)=>updateP(p.id,{sourceTrust:v})} /></div>
                 </div>
-                <div className="mt-2 grid grid-cols-2 gap-2">
+                <div className="mt-2 grid grid-cols-1 gap-2 w-full">
                   <UploadBox emptyLabel="Add PDF" accept="application/pdf" file={p.resume} onPick={(ref)=>updateP(p.id,{resume:ref})} onShare={()=>p.resume && shareRef(p.resume,'resume')} onDownload={()=>p.resume && downloadRef(p.resume)} onClear={()=>{ if (p.resume) deleteFileRef(p.resume); updateP(p.id,{resume:null}); }} />
                   <UploadBox emptyLabel="Add photo" accept="image/*" file={p.photo} onPick={(ref)=>updateP(p.id,{photo:ref})} onShare={()=>p.photo && shareRef(p.photo,'photo')} onDownload={()=>p.photo && downloadRef(p.photo)} onClear={()=>{ if (p.photo) deleteFileRef(p.photo); updateP(p.id,{photo:null}); }} />
                 </div>
