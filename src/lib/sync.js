@@ -3,6 +3,9 @@ import supabase from "./supa";
 
 const TABLE = "sync_rooms";
 
+// each device/browser session gets a unique id
+const clientId = Math.random().toString(36).slice(2) + Date.now().toString(36);
+
 /**
  * Save the current payload for a room.
  * Works even if "room" is not UNIQUE by doing update-then-insert.
@@ -11,10 +14,13 @@ export async function saveRoom(room, payload) {
   if (!room) return;
   const updated_at = new Date().toISOString();
 
+  // Tag the payload with clientId + updated_at
+  const tagged = { ...payload, clientId, updated_at };
+
   // Try update first
   const { data, error } = await supabase
     .from(TABLE)
-    .update({ payload, updated_at })
+    .update({ payload: tagged, updated_at })
     .eq("room", room)
     .select("room");
 
@@ -27,7 +33,7 @@ export async function saveRoom(room, payload) {
   if (!data || data.length === 0) {
     const { error: e2 } = await supabase
       .from(TABLE)
-      .insert([{ room, payload, updated_at }]);
+      .insert([{ room, payload: tagged, updated_at }]);
 
     if (e2) {
       console.error("saveRoom insert error:", e2);
@@ -70,6 +76,8 @@ export function subscribeRoom(room, cb) {
     (msg) => {
       try {
         const latest = msg.new?.payload;
+        // Ignore our own updates
+        if (latest?.clientId === clientId) return;
         if (latest !== undefined) cb(latest);
       } catch (e) {
         console.error("subscribeRoom handler error:", e);
