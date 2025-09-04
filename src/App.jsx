@@ -655,6 +655,9 @@ const lastAppliedRef = useRef(0);
 useEffect(() => {
   if (!sync?.room) return;
 
+// Skip saves for ~800ms after we just applied a remote payload
+if (lastAppliedRef.current && Date.now() - lastAppliedRef.current < 800) return;
+
   // If we just applied a remote payload, skip one save to prevent echo
   if (applyingRemoteRef.current) {
     applyingRemoteRef.current = false;
