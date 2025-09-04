@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+const clientId = Math.random().toString(36).slice(2) + Date.now().toString(36);
 import localforage from "localforage";
 import { fetchRoom, saveRoom, subscribeRoom } from "./lib/sync"; 
 
@@ -628,9 +629,10 @@ export default function App(){
   useEffect(() => {
     if (!sync?.room) return;
     const unsub = subscribeRoom(sync.room, (payload) => {
-      if (payload?.profile) setProfile(payload.profile);
-      if (Array.isArray(payload?.prospects)) setProspects(payload.prospects);
-    });
+  if (payload?.clientId === clientId) return; // ignore our own updates
+  if (payload?.profile) setProfile(payload.profile);
+  if (Array.isArray(payload?.prospects)) setProspects(payload.prospects);
+});
     return () => { try { unsub?.(); } catch {} };
   }, [sync?.room]);
 
@@ -638,7 +640,7 @@ export default function App(){
   useEffect(() => {
     if (!sync?.room) return;
     const t = setTimeout(() => {
-      saveRoom(sync.room, { profile, prospects }).catch(()=>{});
+      saveRoom(sync.room, { profile, prospects, clientId }).catch(()=>{});
     }, 400);
     return () => clearTimeout(t);
   }, [profile, prospects, sync?.room]);
