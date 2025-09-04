@@ -513,6 +513,7 @@ function Prospects({ prospects, setProspects, profile, saveProfile, activeKidId,
 // ===== My Info =====
 function MyInfo({ profile, saveProfile }){
   const kids=ensureArray(profile?.kids);
+const [viewerFile, setViewerFile] = useState(null);
   const [selId,setSelId]=useState(kids[0]?.id||'');
   useEffect(()=>{ setSelId(kids[0]?.id||''); },[profile?.kids]);
   const addKid=()=>{ const newKid={ id:uid(), name:'', photo:null, resume:null, updatedAt:Date.now() }; const next=[...kids,newKid]; saveProfile({ ...(profile||{}), kids:next, updatedAt:Date.now() }); setSelId(newKid.id); };
