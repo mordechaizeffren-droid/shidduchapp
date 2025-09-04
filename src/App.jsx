@@ -577,6 +577,8 @@ export default function App(){
   const [tab,setTab]=useState('prospects');
   const [profile,setProfile]=useState(null);
   const [prospects,setProspects]=useState([]);
+const applyingRemoteRef = useRef(false);
+const lastAppliedRef = useRef(0);
   const [activeKidId, setActiveKidId] = useState('');
   const [syncOpen, setSyncOpen] = useState(false);
   const [sync, setSync] = useState({ config:'', room:'' });
@@ -626,24 +628,46 @@ export default function App(){
     return () => { cancelled = true; };
   }, [sync?.room]);
 
-  useEffect(() => {
-    if (!sync?.room) return;
-    const unsub = subscribeRoom(sync.room, (payload) => {
-  if (payload?.clientId === clientId) return; // ignore our own updates
-  if (payload?.profile) setProfile(payload.profile);
-  if (Array.isArray(payload?.prospects)) setProspects(payload.prospects);
-});
-    return () => { try { unsub?.(); } catch {} };
-  }, [sync?.room]);
+ useEffect(() => {
+  if (!sync?.room) return;
 
-  // Push changes (debounced)
-  useEffect(() => {
-    if (!sync?.room) return;
-    const t = setTimeout(() => {
-      saveRoom(sync.room, { profile, prospects, clientId }).catch(()=>{});
-    }, 400);
-    return () => clearTimeout(t);
-  }, [profile, prospects, sync?.room]);
+  const unsub = subscribeRoom(sync.room, (payload) => {
+    // Ignore our own updates by clientId
+    if (payload?.clientId === clientId) return;
+
+    // Prevent echo loop by marking remote apply
+    applyingRemoteRef.current = true;
+    lastAppliedRef.current = Date.now();
+
+    if (payload?.profile) setProfile(payload.profile);
+    if (Array.isArray(payload?.prospects)) setProspects(payload.prospects);
+
+    applyingRemoteRef.current = false;
+  });
+
+  return () => {
+    try { unsub?.(); } catch {}
+  };
+}, [sync?.room]);
+
+
+// Push changes (debounced)
+useEffect(() => {
+  if (!sync?.room) return;
+
+  // If we just applied a remote payload, skip one save to prevent echo
+  if (applyingRemoteRef.current) {
+    applyingRemoteRef.current = false;
+    return;
+  }
+
+  const t = setTimeout(() => {
+    saveRoom(sync.room, { profile, prospects, clientId }).catch(()=>{});
+  }, 400);
+
+  return () => clearTimeout(t);
+}, [profile, prospects, sync?.room]);
+S
 
   // Export / Import
   const importRef=useRef(null);
