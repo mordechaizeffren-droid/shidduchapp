@@ -195,7 +195,6 @@ function FileToolbar({ onShare, onDownload, onDelete }){
 
 function UploadBox({
   emptyLabel,
-  accept,
   file,
   onPick,
   onShare,
@@ -204,8 +203,6 @@ function UploadBox({
   onOpen,
 }) {
   const inputRef = useRef(null);
-  const url = useFilePreview(file);
-  const isImg = (file?.type || "").startsWith("image/");
 
   const handleChange = async (e) => {
     const f = e.target.files?.[0];
@@ -216,7 +213,7 @@ function UploadBox({
     e.target.value = "";
   };
 
-  // Empty state: show picker button
+  // Empty state: shows the + box to upload
   if (!file) {
     return (
       <button
@@ -229,7 +226,7 @@ function UploadBox({
         <input
           ref={inputRef}
           type="file"
-          accept={accept}
+          accept="application/pdf,.doc,.docx,image/*"
           className="hidden"
           onChange={handleChange}
         />
@@ -237,39 +234,21 @@ function UploadBox({
     );
   }
 
-  // Has file: show preview card + toolbar
+  // File exists: show simple box with no inline preview
   return (
-    <div className="h-28 border rounded-lg bg-white p-2 flex flex-col">
-      <div
-        className="flex-1 overflow-hidden rounded border bg-gray-50 flex items-center justify-center cursor-pointer"
-        onClick={() => onOpen?.(file)}
-        title="Tap to view"
-      >
-        {url ? (
-          isImg ? (
-            <img
-              src={url}
-              alt={file.name}
-              className="object-contain w-full h-full"
-            />
-          ) : (
-            <iframe
-              key={file?.id || url}
-              src={url}
-              title="Preview"
-              className="w-full h-full rounded"
-            />
-          )
-        ) : (
-          <div className="text-xs text-gray-400">{file.name}</div>
-        )}
-      </div>
+    <div
+      className="h-28 border rounded-lg bg-white flex flex-col items-center justify-center cursor-pointer"
+      onClick={() => onOpen?.(file)}
+      title="Tap to view"
+    >
+      <div className="text-3xl leading-none text-gray-400">📄</div>
+      <div className="text-xs text-gray-500 mt-1">{file.name || "File"}</div>
 
-      <FileToolbar
-        onShare={onShare}
-        onDownload={onDownload}
-        onDelete={onClear}
-      />
+      <div className="flex items-center gap-2 mt-2">
+        <IconBtn ariaLabel="Share" label="Share" onClick={(e)=>{ e.stopPropagation(); onShare?.(); }} className="border-blue-300 text-blue-700 hover:bg-blue-50"><IconShare/></IconBtn>
+        <IconBtn ariaLabel="Download" label="Download" onClick={(e)=>{ e.stopPropagation(); onDownload?.(); }} className="border-emerald-300 text-emerald-700 hover:bg-emerald-50"><IconDownload/></IconBtn>
+        <IconBtn ariaLabel="Delete" label="Delete" onClick={(e)=>{ e.stopPropagation(); onClear?.(); }} className="border-rose-300 text-rose-700 hover:bg-rose-50"><IconX/></IconBtn>
+      </div>
     </div>
   );
 }
@@ -631,10 +610,8 @@ const [viewerFile, setViewerFile] = useState(null);
 );
 }
 function Viewer({ fileRef, onClose }) {
-  // reuse existing hook in this file
   const url = useFilePreview(fileRef);
 
-  // close on ESC
   useEffect(() => {
     const h = (e) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', h);
@@ -643,35 +620,44 @@ function Viewer({ fileRef, onClose }) {
 
   if (!fileRef) return null;
 
-  const isImg = (fileRef?.type || '').startsWith('image/');
+  const isImg = (fileRef.type || '').startsWith('image/');
 
   return (
     <div
-      className="fixed inset-0 z-[1000] bg-black/80 flex items-center justify-center p-4"
+      className="fixed inset-0 z-[1000] bg-black/90 flex items-center justify-center p-4"
       onClick={onClose}
       role="dialog"
       aria-label="Viewer"
     >
       <div
-        className="max-w-[1000px] w-full max-h-[90vh] bg-white rounded-lg overflow-hidden"
+        className="max-w-[1000px] w-full max-h-[95vh] bg-white rounded-lg overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {url ? (
           isImg ? (
-            <img src={url} alt={fileRef?.name || 'image'} className="w-full h-[85vh] object-contain" />
+            <img
+              src={url}
+              alt={fileRef.name || 'image'}
+              className="w-full h-[90vh] object-contain"
+            />
           ) : (
             <iframe
-              key={fileRef?.id || url}
+              key={fileRef.id || url}
               src={url}
               title="Preview"
-              className="w-full h-[85vh]"
+              className="w-full h-[90vh]"
             />
           )
         ) : (
           <div className="p-6 text-center text-sm text-gray-500">Loading…</div>
         )}
+
         <div className="p-2 text-right">
-          <button type="button" className="px-3 py-1 rounded border text-sm" onClick={onClose}>
+          <button
+            type="button"
+            className="px-3 py-1 rounded border text-sm"
+            onClick={onClose}
+          >
             Close
           </button>
         </div>
