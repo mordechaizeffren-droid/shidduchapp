@@ -1,9 +1,10 @@
+// src/App.jsx
 import React, { useEffect, useRef, useState } from "react";
 import localforage from "localforage";
 import { fetchRoom, saveRoom, subscribeRoom } from "./lib/sync";
 
 // =============================================================================
-// Shidduch Organizer — Single File App (all features, compact)
+// Shidduch Organizer — Single File App (with full-screen Viewer + simplified uploads)
 // =============================================================================
 
 // ===== DB =====
@@ -16,6 +17,9 @@ const uid = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
 const ensureArray = (v) => (Array.isArray(v) ? v : []);
 const STATUS = ["New", "Researching", "Dating", "On Hold", "Pass", "Reconsidering"];
 const TRUST = ["Shadchan (met)", "Shadchan (never met)", "Friend", "Acquaintance", "Never met"];
+
+// Allow PDFs, images, common docs (doc/docx/heic)
+const ACCEPT_ALL = "application/pdf,image/*,.doc,.docx,.heic,.heif";
 
 // ===== File helpers =====
 const attachFile = async (file) => {
@@ -85,7 +89,7 @@ const shareKidAll = async (kid) => {
     // Fallbacks
     for (const f of files){ const url=URL.createObjectURL(f); const w=window.open(url,'_blank','noopener,noreferrer'); if(!w){ const a=document.createElement('a'); a.href=url; a.download=f.name||'file'; a.click(); } setTimeout(()=>URL.revokeObjectURL(url),60000); }
     if(text){ try{ await navigator.clipboard.writeText(text);}catch{} }
-  }catch{ alert('Share failed. You can still Export from the top toolbar.'); }
+  }catch{ alert('Share failed. You can still Export/Import from the gear menu.'); }
 };
 
 const deleteFileRef = async (ref) => { try { if (ref?.id) await dbFiles.removeItem(ref.id); } catch {} };
@@ -108,7 +112,7 @@ const IconPaste = (p) => (
 );
 const IconGear = (p) => (<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" {...p}><circle cx="12" cy="12" r="3" fill="currentColor" /></svg>);
 
-// ===== Menus & small UI bits =====
+// ===== Small UI bits =====
 const statusTone = (s)=>({ New:'bg-blue-100 text-blue-800 border-blue-200', Researching:'bg-amber-100 text-amber-800 border-amber-200', Dating:'bg-emerald-100 text-emerald-800 border-emerald-200', 'On Hold':'bg-slate-100 text-slate-800 border-slate-200', Pass:'bg-rose-100 text-rose-800 border-rose-200', Reconsidering:'bg-violet-100 text-violet-800 border-violet-200' }[s] || 'bg-gray-100 text-gray-800 border-gray-200');
 
 function StatusPill({ value, onChange }){
@@ -158,93 +162,128 @@ function TrustSelect({ value, onChange }){
   );
 }
 
-function EditableText({ value, onChange, className, inputClass }){
-  const [editing,setEditing]=useState(false); const [val,setVal]=useState(value);
-  useEffect(()=>setVal(value),[value]);
+function EditableText({ value, onChange, className, inputClass, placeholder="Add name…" }){
+  const [editing,setEditing]=useState(false); const [val,setVal]=useState(value||'');
+  useEffect(()=>setVal(value||''),[value]);
   return editing? (
-    <input className={inputClass} value={val} autoFocus onChange={e=>setVal(e.target.value)} onKeyDown={e=>{ if(e.key==='Enter'){ onChange((val||'').trim()); setEditing(false);} if(e.key==='Escape'){ setEditing(false);} }} onBlur={()=>{ onChange((val||'').trim()); setEditing(false);} } />
+    <input className={inputClass} value={val} autoFocus placeholder={placeholder}
+      onChange={e=>setVal(e.target.value)}
+      onKeyDown={e=>{ if(e.key==='Enter'){ onChange((val||'').trim()); setEditing(false);} if(e.key==='Escape'){ setEditing(false);} }}
+      onBlur={()=>{ onChange((val||'').trim()); setEditing(false);} } />
   ) : (
-    <button className={className} onClick={()=>setEditing(true)} title="Tap to edit">{value}</button>
+    <button className={`${className} ${!value?'text-gray-400':''}`} onClick={()=>setEditing(true)} title="Tap to edit">
+      {value || placeholder}
+    </button>
   );
 }
 
-// Upload + previews
-function useFilePreview(fileRef){
-  const [url, setUrl] = useState('');
+// ============================================================================
+// Full-screen Viewer (images + PDFs + fallback for docs)
+// ============================================================================
+function Viewer({ fileRef, onClose }) {
+  const [url, setUrl] = useState("");
+  const [type, setType] = useState("");
 
   useEffect(() => {
-    let cancelled = false;
-    let currentUrl = '';
-
+    let alive = true; let obj = "";
     (async () => {
-      try {
-        if (!fileRef?.id) {
-          setUrl('');
-          return;
-        }
-        const blob = await dbFiles.getItem(fileRef.id);
-        if (cancelled || !blob) {
-          setUrl('');
-          return;
-        }
-        currentUrl = URL.createObjectURL(blob);
-        setUrl(currentUrl);
-      } catch {
-        setUrl('');
-      }
+      if (!fileRef?.id) return;
+      const blob = await dbFiles.getItem(fileRef.id);
+      if (!alive || !blob) return;
+      obj = URL.createObjectURL(blob);
+      setUrl(obj);
+      setType((fileRef.type || blob.type || "").toLowerCase());
     })();
-
-    return () => {
-      cancelled = true;
-      // keep the blob URL alive a bit so re-opening doesn't show "Loading..."
-      if (currentUrl) {
-        setTimeout(() => URL.revokeObjectURL(currentUrl), 60000); // 60s
-      }
-    };
+    return () => { alive = false; if (obj) URL.revokeObjectURL(obj); };
   }, [fileRef?.id]);
 
-  return url;
-}
+  if (!fileRef) return null;
+  const isImg = type.startsWith("image/");
+  const isPdf = type === "application/pdf" || fileRef?.name?.toLowerCase?.().endsWith(".pdf");
 
-
-function FileToolbar({ onShare, onDownload, onDelete }){
   return (
-    <div className="flex items-center gap-2 mt-2">
-      <IconBtn ariaLabel="Share" label="Share" onClick={onShare} className="border-blue-300 text-blue-700 hover:bg-blue-50"><IconShare/></IconBtn>
-      <IconBtn ariaLabel="Download" label="Download" onClick={onDownload} className="border-emerald-300 text-emerald-700 hover:bg-emerald-50"><IconDownload/></IconBtn>
-      <IconBtn ariaLabel="Delete" label="Delete" onClick={onDelete} className="border-rose-300 text-rose-700 hover:bg-rose-50"><IconX/></IconBtn>
+    <div className="fixed inset-0 z-[9999] bg-black/90" onClick={onClose}>
+      <button
+        type="button"
+        aria-label="Close"
+        className="absolute top-3 right-3 z-[10000] px-3 py-1 rounded-full border text-xs bg-white"
+        onClick={(e)=>{ e.stopPropagation(); onClose(); }}
+      >
+        Close
+      </button>
+      <div className="w-full h-full flex items-center justify-center" onClick={(e)=>e.stopPropagation()}>
+        {isImg && url ? (
+          <img src={url} alt={fileRef?.name||'image'} className="max-w-full max-h-full object-contain touch-pan-y" />
+        ) : isPdf && url ? (
+          <iframe title="Document" src={url} className="w-[100vw] h-[100vh] border-0" />
+        ) : url ? (
+          <div className="text-center text-white px-6">
+            <div className="mb-3 text-sm opacity-90">Preview not available. You can open or download the file.</div>
+            <div className="flex gap-2 justify-center">
+              <a href={url} target="_blank" rel="noopener noreferrer" className="px-3 py-1 rounded-full border bg-white text-black">Open</a>
+              <button className="px-3 py-1 rounded-full border bg-white text-black" onClick={()=>downloadRef(fileRef)}>Download</button>
+            </div>
+          </div>
+        ) : (
+          <div className="text-white">Loading…</div>
+        )}
+      </div>
     </div>
   );
 }
 
-function UploadBox({ emptyLabel, accept, file, onPick, onShare, onDownload, onClear }){
+// ============================================================================
+// File row (no inline preview; tap to open viewer)
+// ============================================================================
+function FileRow({ file, label, onOpen, onShare, onDownload, onClear }) {
+  if (!file) return (
+    <div className="h-28 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 flex flex-col items-center justify-center">
+      <div className="text-3xl leading-none text-gray-400">+</div>
+      <div className="text-xs text-gray-500 mt-1">{label}</div>
+    </div>
+  );
+  const name = file.name || "file";
+  return (
+    <div className="h-28 border rounded-lg bg-white p-2 flex flex-col">
+      <button
+        type="button"
+        className="flex-1 rounded border bg-gray-50 px-3 py-2 text-left text-xs hover:bg-gray-100 truncate"
+        onClick={()=>onOpen?.(file)}
+        title={name}
+      >
+        {name}
+      </button>
+      <div className="flex items-center gap-2 mt-2">
+        <IconBtn ariaLabel="Open" label="Open" onClick={()=>onOpen?.(file)} className="border-blue-300 text-blue-700 hover:bg-blue-50">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 3h7v7"/><path d="M14 10L21 3"/><path d="M5 12v7a2 2 0 0 0 2 2h7"/></svg>
+        </IconBtn>
+        <IconBtn ariaLabel="Share" label="Share" onClick={onShare} className="border-blue-300 text-blue-700 hover:bg-blue-50"><IconShare/></IconBtn>
+        <IconBtn ariaLabel="Download" label="Download" onClick={onDownload} className="border-emerald-300 text-emerald-700 hover:bg-emerald-50"><IconDownload/></IconBtn>
+        <IconBtn ariaLabel="Delete" label="Delete" onClick={onClear} className="border-rose-300 text-rose-700 hover:bg-rose-50"><IconX/></IconBtn>
+      </div>
+    </div>
+  );
+}
+
+// Picker that writes to IndexedDB via attachFile and calls onPick(ref)
+function UploadBox({ emptyLabel, file, onPick, onOpen, onShare, onDownload, onClear }){
   const inputRef = useRef(null);
-  const url = useFilePreview(file);
-  const isImg = (file?.type || '').startsWith('image/');
-  const handleChange = async (e) => {
+  const onChange = async (e) => {
     const f = e.target.files?.[0];
     if(f){ const ref = await attachFile(f); if(ref) onPick(ref); }
     e.target.value='';
   };
-  if (!file) {
-    return (
-      <button type="button" onClick={()=>inputRef.current?.click()} className="h-28 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 flex flex-col items-center justify-center">
-        <div className="text-3xl leading-none text-gray-400">+</div>
-        <div className="text-xs text-gray-500 mt-1">{emptyLabel}</div>
-        <input ref={inputRef} type="file" accept={accept} className="hidden" onChange={handleChange} />
-      </button>
-    );
-  }
   return (
-    <div className="h-28 border rounded-lg bg-white p-2 flex flex-col">
-      <div className="flex-1 overflow-hidden rounded border bg-gray-50 flex items-center justify-center">
-        {url ? (
-          isImg ? <img src={url} alt={file.name} className="object-contain w-full h-full"/> : <iframe key={file?.id || url} src={url} title="PDF preview" className="w-full h-full rounded" />
-        ) : (
-          <div className="text-xs text-gray-400">{file.name}</div>
-        )}
-      </div>
-      <FileToolbar onShare={onShare} onDownload={onDownload} onDelete={onClear} />
+    <div onClick={(e)=>{ if(!file) inputRef.current?.click(); }} className="cursor-default">
+      <input ref={inputRef} type="file" accept={ACCEPT_ALL} className="hidden" onChange={onChange} />
+      <FileRow
+        file={file}
+        label={emptyLabel}
+        onOpen={onOpen}
+        onShare={onShare}
+        onDownload={onDownload}
+        onClear={onClear}
+      />
     </div>
   );
 }
@@ -305,7 +344,7 @@ function PillMenu({ label, options, onPick, strong }){
 function SettingsFab({ onExport, onImport, onOpenSync }) {
   const [open, setOpen] = useState(false);
   const wrap = useRef(null);
-  useEffect(()=>{ if(!open) return; const onDoc=(e)=>{ if(wrap.current && !wrap.current.contains(e.target)) setOpen(false); }; document.addEventListener('click', onDoc); return ()=> document.removeEventListener('click', onDoc); },[open]);
+  useEffect(()=>{ if(!open) return; const onDoc=(e)=>{ if(wrap.current && !wrap.current.contains(e.target)) setOpen(false); }; document.addEventListener('click', onDoc); return ()=>document.removeEventListener('click', onDoc); },[open]);
   return (
     <div ref={wrap} className="fixed bottom-4 right-4 z-50 flex flex-col items-end">
       {open && (
@@ -356,8 +395,8 @@ function SyncPanel({ open, initial, onSave, onClear, onClose }) {
   );
 }
 
-// ===== Prospects =====
-function Prospects({ prospects, setProspects, profile, saveProfile, activeKidId, setActiveKidId }){
+// ===== Prospects (Resumes) =====
+function Prospects({ prospects, setProspects, profile, saveProfile, activeKidId, setActiveKidId, onOpenFile }){
   const kids=ensureArray(profile?.kids);
   const safe=ensureArray(prospects);
   const [q,setQ]=useState('');
@@ -397,11 +436,12 @@ function Prospects({ prospects, setProspects, profile, saveProfile, activeKidId,
   // Quick Add from file picker
   const quickRef = useRef(null);
   const quickAddFromPickedFile = async (f) => {
-    if (!kids.length) { alert('Add a child first in My Info'); return; }
+    if (!kids.length) { alert('Add a profile first in My Profile'); return; }
     const ref = await attachFile(f); if (!ref) return;
-    const base = (f.name||'').replace(/\.[^.]+$/,'').replace(/[_-]+/g,' ').trim(); const name = base || 'Untitled';
+    const base = (f.name||'').replace(/\.[^.]+$/,'').replace(/[_-]+/g,' ').trim(); const name = base || '';
     const pid = activeKidId || kids[0].id;
     const p = { id: uid(), kidId: pid, fullName: name, status:'New', sourceName:'', sourceTrust:'', city:'', notes:'', photo:null, resume:null, updatedAt: Date.now() };
+    // Place images into photo, others into resume
     if ((f.type||'').startsWith('image/')) p.photo = ref; else p.resume = ref;
     setProspects([...safe, p]);
   };
@@ -409,10 +449,10 @@ function Prospects({ prospects, setProspects, profile, saveProfile, activeKidId,
 
   const toggleOpen=(id)=>setExpanded(s=>({...s,[id]:!s[id]}));
   const addKid=()=>{ const k={id:uid(), name:'', updatedAt:Date.now()}; saveProfile({ ...(profile||{}), kids:[...kids, k], updatedAt:Date.now() }); setActiveKidId(k.id); };
-  const addProspect=()=>{ if(!kids.length){ alert('Add a child first in My Info'); return; } const p={ id:uid(), kidId:activeKidId||kids[0].id, fullName:'Untitled', status:'New', sourceName:'', sourceTrust:'', city:'', notes:'', photo:null, resume:null, updatedAt:Date.now() }; setProspects([...safe,p]); };
+  const addProspect=()=>{ if(!kids.length){ alert('Add a profile first in My Profile'); return; } const p={ id:uid(), kidId:activeKidId||kids[0].id, fullName:'', status:'New', sourceName:'', sourceTrust:'', city:'', notes:'', photo:null, resume:null, updatedAt: Date.now() }; setProspects([...safe,p]); };
   const updateP=(id,patch)=> setProspects(safe.map(x=> x.id===id?{...x,...patch, updatedAt:Date.now()}:x));
-  const removeP=(id)=> setProspects(safe.filter(x=>x.id!==id));
-  const onDropFiles=async(pid, files)=>{ if(!files||!files.length) return; for(const f of Array.from(files)){ const ref=await attachFile(f); if(!ref) continue; if((f.type||'').startsWith('image/')) updateP(pid,{photo:ref}); else if(f.type==='application/pdf'||(f.name||'').toLowerCase().endsWith('.pdf')) updateP(pid,{resume:ref}); } };
+  const removeP=(id)=>{ if(!confirm("Delete this resume?")) return; setProspects(safe.filter(x=>x.id!==id)); };
+  const onDropFiles=async(pid, files)=>{ if(!files||!files.length) return; for(const f of Array.from(files)){ const ref=await attachFile(f); if(!ref) continue; if((f.type||'').startsWith('image/')) updateP(pid,{photo:ref}); else updateP(pid,{resume:ref}); } };
 
   const filtered = safe
     .filter(p=>!activeKidId || p.kidId===activeKidId)
@@ -421,10 +461,10 @@ function Prospects({ prospects, setProspects, profile, saveProfile, activeKidId,
 
   return (
     <div className="space-y-3">
-      {/* kid pills */}
+      {/* profile pills */}
       <div className="flex items-center gap-2 flex-wrap">
         {kids.map(k=> (<button key={k.id} className={`px-3 py-1 rounded-full border ${activeKidId===k.id?'bg-black text-white':'bg-white'}`} onClick={()=>setActiveKidId(k.id)}>{k.name||'Unnamed'}</button>))}
-        <button className="px-3 py-1 rounded-full border" onClick={addKid} aria-label="Add child">+</button>
+        <button className="px-3 py-1 rounded-full border" onClick={addKid} aria-label="Add profile">+</button>
       </div>
 
       {/* search + filter */}
@@ -432,19 +472,25 @@ function Prospects({ prospects, setProspects, profile, saveProfile, activeKidId,
         <input className="border rounded px-2 py-1 text-sm flex-1" placeholder="Search name, city, notes..." value={q} onChange={e=>setQ(e.target.value)} />
         {pasteOn && (<input ref={pasteRef} onPaste={handlePaste} className="border rounded px-2 py-1 text-sm" placeholder="Paste here…" aria-label="Paste here" />)}
         <PillMenu label={statusFilter||'All'} options={['All',...STATUS]} onPick={(s)=>setStatusFilter(s==='All'?'':s)} />
-        <input ref={quickRef} type="file" accept="application/pdf,image/*" className="hidden" onChange={e=>{ const f=e.target.files?.[0]; if(f) quickAddFromPickedFile(f); e.target.value=''; }} />
+        <input ref={quickRef} type="file" accept={ACCEPT_ALL} className="hidden" onChange={e=>{ const f=e.target.files?.[0]; if(f) quickAddFromPickedFile(f); e.target.value=''; }} />
       </div>
 
-      {/* cards grid */}
-      <div className="grid grid-cols-2 gap-2">
+      {/* cards list (single column full width) */}
+      <div className="grid grid-cols-1 gap-2">
         {filtered.map(p=> (
-          <div key={p.id} className="border rounded bg-white shadow-sm" onDragOver={(e)=>e.preventDefault()} onDrop={async(e)=>{ e.preventDefault(); await onDropFiles(p.id, e.dataTransfer?.files||null); }}>
+          <div
+            key={p.id}
+            className="border rounded bg-white shadow-sm"
+            onDragOver={(e)=>e.preventDefault()}
+            onDrop={async(e)=>{ e.preventDefault(); await onDropFiles(p.id, e.dataTransfer?.files||null); }}
+          >
             <div className="p-2 flex items-center gap-2">
-              <EditableText value={p.fullName} onChange={(v)=>updateP(p.id,{fullName:v||'Untitled'})} className="font-medium truncate flex-1" inputClass="font-medium truncate flex-1 border rounded px-2 py-1" />
+              <EditableText value={p.fullName} onChange={(v)=>updateP(p.id,{fullName:v||''})} className="font-medium truncate flex-1" inputClass="font-medium truncate flex-1 border rounded px-2 py-1" placeholder="Add name…" />
               {p.city ? <span className="text-xs text-gray-500 truncate max-w-[6rem]">{p.city}</span> : null}
-              <button type="button" className="px-2 py-1 rounded-full border text-xs bg-white" onClick={()=>toggleOpen(p.id)} aria-label="Toggle details">{expanded[p.id]? 'Collapse':'Expand'}</button>
+              <button type="button" className="px-2 py-1 rounded-full border text-xs bg-white" onClick={()=>toggleOpen(p.id)} aria-label="Toggle details">▾</button>
               <button type="button" aria-label="Delete resume" className="w-7 h-7 rounded-full border border-rose-300 text-rose-700 flex items-center justify-center hover:bg-rose-50" onClick={()=>removeP(p.id)}>×</button>
             </div>
+
             {expanded[p.id] && (
               <div className="p-2 pt-0">
                 <div className="mt-1 grid grid-cols-2 gap-2 items-start">
@@ -453,12 +499,30 @@ function Prospects({ prospects, setProspects, profile, saveProfile, activeKidId,
                 </div>
                 <div className="mt-2 border rounded p-3 grid grid-cols-2 gap-3 items-start">
                   <div><div className="text-xs mb-1">Suggested by</div><InlinePill label={p.sourceName||''} placeholder="" onEdit={(v)=>updateP(p.id,{sourceName:v})} full /></div>
-                  <div><div className="text-xs mb-1">Status</div><TrustSelect value={p.sourceTrust||''} onChange={(v)=>updateP(p.id,{sourceTrust:v})} /></div>
+                  <div><div className="text-xs mb-1">Referrer status</div><TrustSelect value={p.sourceTrust||''} onChange={(v)=>updateP(p.id,{sourceTrust:v})} /></div>
                 </div>
+
                 <div className="mt-2 grid grid-cols-2 gap-2">
-                  <UploadBox emptyLabel="Add PDF" accept="application/pdf" file={p.resume} onPick={(ref)=>updateP(p.id,{resume:ref})} onShare={()=>p.resume && shareRef(p.resume,'resume')} onDownload={()=>p.resume && downloadRef(p.resume)} onClear={()=>{ if (p.resume) deleteFileRef(p.resume); updateP(p.id,{resume:null}); }} />
-                  <UploadBox emptyLabel="Add photo" accept="image/*" file={p.photo} onPick={(ref)=>updateP(p.id,{photo:ref})} onShare={()=>p.photo && shareRef(p.photo,'photo')} onDownload={()=>p.photo && downloadRef(p.photo)} onClear={()=>{ if (p.photo) deleteFileRef(p.photo); updateP(p.id,{photo:null}); }} />
+                  <UploadBox
+                    emptyLabel="Add PDF/photo/doc"
+                    file={p.resume}
+                    onPick={(ref)=>updateP(p.id,{resume:ref})}
+                    onOpen={(ref)=>onOpenFile(ref)}
+                    onShare={()=>p.resume && shareRef(p.resume,'resume')}
+                    onDownload={()=>p.resume && downloadRef(p.resume)}
+                    onClear={()=>{ if (p.resume) deleteFileRef(p.resume); updateP(p.id,{resume:null}); }}
+                  />
+                  <UploadBox
+                    emptyLabel="Add photo/PDF/doc"
+                    file={p.photo}
+                    onPick={(ref)=>updateP(p.id,{photo:ref})}
+                    onOpen={(ref)=>onOpenFile(ref)}
+                    onShare={()=>p.photo && shareRef(p.photo,'photo')}
+                    onDownload={()=>p.photo && downloadRef(p.photo)}
+                    onClear={()=>{ if (p.photo) deleteFileRef(p.photo); updateP(p.id,{photo:null}); }}
+                  />
                 </div>
+
                 <div className="mt-2">
                   <div className="text-xs">Notes</div>
                   <div className="relative">
@@ -466,8 +530,9 @@ function Prospects({ prospects, setProspects, profile, saveProfile, activeKidId,
                     <button type="button" aria-label="Share notes" className="absolute right-2 bottom-2 px-3 py-1 rounded-full border text-xs bg-white hover:bg-blue-50 border-blue-300 text-blue-700 disabled:opacity-50 shadow-sm" onClick={()=>shareText(p.notes||'', p.fullName||'Notes')} disabled={!((p.notes||'').trim())}>Share</button>
                   </div>
                 </div>
+
                 <div className="mt-2">
-                  <button type="button" className="px-3 py-1 rounded-full border text-xs bg-white hover:bg-blue-50 border-blue-300 text-blue-700 disabled:opacity-50" onClick={()=>shareKidAll({ name:(kids.find(k=>k.id===p.kidId)?.name)||p.fullName, photo:p.photo, resume:p.resume, blurb:(kids.find(k=>k.id===p.kidId)?.blurb)||'' })} disabled={!(((kids.find(k=>k.id===p.kidId)?.blurb||'').trim()) || p.photo || p.resume)}>Share</button>
+                  <button type="button" className="px-3 py-1 rounded-full border text-xs bg-white hover:bg-blue-50 border-blue-300 text-blue-700 disabled:opacity-50" onClick={()=>shareKidAll({ name:(kids.find(k=>k.id===p.kidId)?.name)||p.fullName, photo:p.photo, resume:p.resume, blurb:(kids.find(k=>k.id===p.kidId)?.blurb)||'' })} disabled={!(((kids.find(k=>k.id===p.kidId)?.blurb||'').trim()) || p.photo || p.resume)}>Share all</button>
                 </div>
               </div>
             )}
@@ -482,8 +547,8 @@ function Prospects({ prospects, setProspects, profile, saveProfile, activeKidId,
   );
 }
 
-// ===== My Info =====
-function MyInfo({ profile, saveProfile }){
+// ===== My Profile =====
+function MyInfo({ profile, saveProfile, onOpenFile }){
   const kids=ensureArray(profile?.kids);
   const [selId,setSelId]=useState(kids[0]?.id||'');
   useEffect(()=>{ setSelId(kids[0]?.id||''); },[profile?.kids]);
@@ -497,7 +562,8 @@ function MyInfo({ profile, saveProfile }){
   const lpRef=useRef(null);
   const startLP=(el,id)=>{ clearTimeout(lpRef.current); lpRef.current=setTimeout(()=>{ const r=el?.getBoundingClientRect?.(); if(!r) return; setKidMenu({open:true,kidId:id,x:r.left+r.width/2,y:r.bottom+8}); },500); };
   const cancelLP=()=> clearTimeout(lpRef.current);
-  const deleteKid=()=>{ const id=kidMenu.kidId; const next=kids.filter(k=>k.id!==id); saveProfile({ ...(profile||{}), kids:next, updatedAt:Date.now() }); if(selId===id) setSelId(next[0]?.id||''); setKidMenu(s=>({...s,open:false})); };
+  const deleteKid=()=>{ if(!confirm("Delete this profile?")) return; const id=kidMenu.kidId; const next=kids.filter(k=>k.id!==id); saveProfile({ ...(profile||{}), kids:next, updatedAt:Date.now() }); if(selId===id) setSelId(next[0]?.id||''); setKidMenu(s=>({...s,open:false})); };
+
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2 flex-wrap">
@@ -508,89 +574,57 @@ function MyInfo({ profile, saveProfile }){
             <button key={k.id} className={`px-3 py-1 rounded-full border ${selId===k.id?'bg-black text-white':'bg-white'}`} onClick={()=>{ if(selId!==k.id) setSelId(k.id); else { setEditKidId(k.id); setEditVal(k.name||''); } }} onContextMenu={(e)=>{ e.preventDefault(); const r=e.currentTarget.getBoundingClientRect(); setKidMenu({open:true,kidId:k.id,x:r.left+r.width/2,y:r.bottom+8}); }} onMouseDown={(e)=>startLP(e.currentTarget,k.id)} onMouseUp={cancelLP} onMouseLeave={cancelLP} onTouchStart={(e)=>startLP(e.currentTarget,k.id)} onTouchEnd={cancelLP} onTouchMove={cancelLP}>{k.name||'Unnamed'}</button>
           )
         ))}
-        <button className="px-3 py-1 rounded-full border" onClick={addKid} aria-label="Add child">+</button>
+        <button className="px-3 py-1 rounded-full border" onClick={addKid} aria-label="Add profile">+</button>
       </div>
-      {kidMenu.open && (<div ref={menuRef} style={{position:'fixed', left:kidMenu.x, top:kidMenu.y, transform:'translateX(-50%)'}} className="z-50 rounded border bgwhite shadow">
-  <button
-    className="block w-full text-left px-3 py-2 text-red-600 hover:bg-red-50"
-    onClick={deleteKid}
-  >
-    Delete
-  </button>
-</div>)}
 
-{selected ? (
-  <>
-    <div className="grid grid-cols-2 gap-2">
-      <UploadBox
-        emptyLabel="Add PDF"
-        accept="application/pdf"
-        file={selected.resume}
-        onPick={(ref)=>updateKid(selected.id,{resume:ref})}
-        onShare={()=>selected.resume && shareRef(selected.resume,'resume')}
-        onDownload={()=>selected.resume && downloadRef(selected.resume)}
-        onClear={()=>{
-          if (selected?.resume) deleteFileRef(selected.resume);
-          updateKid(selected.id,{resume:null});
-        }}
-      />
-      <UploadBox
-        emptyLabel="Add photo"
-        accept="image/*"
-        file={selected.photo}
-        onPick={(ref)=>updateKid(selected.id,{photo:ref})}
-        onShare={()=>selected.photo && shareRef(selected.photo,'photo')}
-        onDownload={()=>selected.photo && downloadRef(selected.photo)}
-        onClear={()=>{
-          if (selected?.photo) deleteFileRef(selected.photo);
-          updateKid(selected.id,{photo:null});
-        }}
-      />
+      {kidMenu.open && (
+        <div ref={menuRef} style={{position:'fixed', left:kidMenu.x, top:kidMenu.y, transform:'translateX(-50%)'}} className="z-50 rounded border bgwhite shadow">
+          <button className="block w-full text-left px-3 py-2 text-red-600 hover:bg-red-50" onClick={deleteKid}>Delete</button>
+        </div>
+      )}
+
+      {selected ? (
+        <>
+          <div className="grid grid-cols-2 gap-2">
+            <UploadBox
+              emptyLabel="Add PDF/photo/doc"
+              file={selected.resume}
+              onPick={(ref)=>updateKid(selected.id,{resume:ref})}
+              onOpen={(ref)=>onOpenFile(ref)}
+              onShare={()=>selected.resume && shareRef(selected.resume,'resume')}
+              onDownload={()=>selected.resume && downloadRef(selected.resume)}
+              onClear={()=>{ if (selected?.resume) deleteFileRef(selected.resume); updateKid(selected.id,{resume:null}); }}
+            />
+            <UploadBox
+              emptyLabel="Add photo/PDF/doc"
+              file={selected.photo}
+              onPick={(ref)=>updateKid(selected.id,{photo:ref})}
+              onOpen={(ref)=>onOpenFile(ref)}
+              onShare={()=>selected.photo && shareRef(selected.photo,'photo')}
+              onDownload={()=>selected.photo && downloadRef(selected.photo)}
+              onClear={()=>{ if (selected?.photo) deleteFileRef(selected.photo); updateKid(selected.id,{photo:null}); }}
+            />
+          </div>
+
+          <div className="mt-2">
+            <div className="text-xs">Blurb</div>
+            <div className="relative">
+              <textarea className="border rounded p-2 w-full text-xs pr-20" rows={2} value={selected.blurb || ''} onChange={e=>updateKid(selected.id,{blurb:e.target.value})} />
+              <button type="button" aria-label="Share blurb" className="absolute right-2 bottom-2 px-3 py-1 rounded-full border text-xs bg-white hover:bg-blue-50 border-blue-300 text-blue-700 disabled:opacity-50 shadow-sm" onClick={()=>shareText(selected.blurb||'', selected.name||'Blurb')} disabled={!((selected.blurb||'').trim())}>Share</button>
+            </div>
+          </div>
+
+          <div className="mt-2">
+            <button type="button" className="px-3 py-1 rounded-full border text-xs bg-white hover:bg-blue-50 border-blue-300 text-blue-700 disabled:opacity-50" disabled={!((selected?.blurb||'').trim() || selected?.photo || selected?.resume)} onClick={()=>shareKidAll(selected)}>Share all</button>
+          </div>
+        </>
+      ) : (
+        <div className="text-xs text-gray-500">Add a profile to attach a photo or resume.</div>
+      )}
+
+      <div className="text-xs text-gray-500">This app stores data only on this device. Use Export/Import to sync between devices.</div>
     </div>
-
-    <div className="mt-2">
-      <div className="text-xs">Blurb</div>
-      <div className="relative">
-        <textarea
-          className="border rounded p-2 w-full text-xs pr-20"
-          rows={2}
-          value={selected.blurb || ''}
-          onChange={e=>updateKid(selected.id,{blurb:e.target.value})}
-        />
-        <button
-          type="button"
-          aria-label="Share blurb"
-          className="absolute right-2 bottom-2 px-3 py-1 rounded-full border text-xs bg-white hover:bg-blue-50 border-blue-300 text-blue-700 disabled:opacity-50 shadow-sm"
-          onClick={()=>shareText(selected.blurb||'', selected.name||'Blurb')}
-          disabled={!((selected.blurb||'').trim())}
-        >
-          Share
-        </button>
-      </div>
-    </div>
-
-    <div className="mt-2">
-      <button
-        type="button"
-        className="px-3 py-1 rounded-full border text-xs bg-white hover:bg-blue-50 border-blue-300 text-blue-700 disabled:opacity-50"
-        disabled={!((selected?.blurb||'').trim() || selected?.photo || selected?.resume)}
-        onClick={()=>shareKidAll(selected)}
-      >
-        Share all
-      </button>
-    </div>
-  </>
-) : (
-  <div className="text-xs text-gray-500">
-    Add a child to attach a photo or resume.
-  </div>
-)}
-
-<div className="text-xs text-gray-500">
-  This app stores data only on this device. Use Export/Import to sync between devices.
-</div>
-</div>
-);
+  );
 }
 
 // ===== App (glue) =====
@@ -601,6 +635,11 @@ export default function App(){
   const [activeKidId, setActiveKidId] = useState('');
   const [syncOpen, setSyncOpen] = useState(false);
   const [sync, setSync] = useState({ config:'', room:'' });
+
+  // viewer state (top-level so both tabs can open it)
+  const [viewerRef, setViewerRef] = useState(null);
+  const openFileViewer = (ref) => setViewerRef(ref);
+  const closeViewer = () => setViewerRef(null);
 
   // Load data from IndexedDB on first load
   useEffect(()=>{(async()=>{
@@ -736,12 +775,15 @@ export default function App(){
 
   return (
     <div className="p-4 max-w-4xl mx-auto text-sm">
-      <h1 className="text-xl font-semibold mb-3">Shidduch Organizer • v1.5 (Lite)</h1>
+      <h1 className="text-xl font-semibold mb-3">Shidduch Organizer • v1.6 (Lite)</h1>
 
+      {/* Tabs */}
       <div className="flex gap-2 mb-4 items-center">
         <button
           className={`px-3 py-1 rounded border ${tab==='prospects'?'bg-black text-white':'bg-white'}`}
           onClick={()=>setTab('prospects')}
+          role="tab"
+          aria-selected={tab==='prospects'}
         >
           Resumes
         </button>
@@ -752,8 +794,10 @@ export default function App(){
           <button
             className={`px-3 py-1 rounded border ${tab==='profile'?'bg-black text-white':'bg-white'}`}
             onClick={()=>setTab('profile')}
+            role="tab"
+            aria-selected={tab==='profile'}
           >
-            My Info
+            My Profile
           </button>
           <input
             ref={importRef}
@@ -787,11 +831,13 @@ export default function App(){
           setProspects={saveProspects}
           activeKidId={activeKidId}
           setActiveKidId={setActiveKidId}
+          onOpenFile={openFileViewer}
         />
       ) : (
-        <MyInfo profile={profile} saveProfile={saveProfile} />
+        <MyInfo profile={profile} saveProfile={saveProfile} onOpenFile={openFileViewer} />
       )}
+
+      {viewerRef ? <Viewer fileRef={viewerRef} onClose={closeViewer} /> : null}
     </div>
   );
 }
-
