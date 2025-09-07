@@ -217,20 +217,22 @@ function useFilePreview(fileRef){
   return url;
 }
 
-// Optional: background cache sweeper (very lightweight)
-useEffect(() => {
-  const sweep = () => {
-    const now = Date.now();
-    for (const [k, v] of __urlCache) {
-      if (now - (v.ts || 0) > 2 * 60 * 1000) { // 2 minutes
-        try { URL.revokeObjectURL(v.url); } catch {}
-        __urlCache.delete(k);
+function usePreviewCacheSweeper(){
+  useEffect(() => {
+    const sweep = () => {
+      const now = Date.now();
+      for (const [k, v] of __urlCache) {
+        if (now - (v.ts || 0) > 2 * 60 * 1000) {
+          try { URL.revokeObjectURL(v.url); } catch {}
+          __urlCache.delete(k);
+        }
       }
-    }
-  };
-  const t = setInterval(sweep, 60 * 1000);
-  return () => clearInterval(t);
-}, []);
+    };
+    const t = setInterval(sweep, 60 * 1000);
+    return () => clearInterval(t);
+  }, []);
+}
+
 
 
 
@@ -650,6 +652,8 @@ export default function App(){
   const [activeKidId, setActiveKidId] = useState('');
   const [syncOpen, setSyncOpen] = useState(false);
   const [sync, setSync] = useState({ config:'', room:'' });
+usePreviewCacheSweeper();
+
 
   // Load data from IndexedDB on first load
   useEffect(()=>{(async()=>{
