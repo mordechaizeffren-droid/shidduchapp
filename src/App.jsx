@@ -64,23 +64,42 @@ const IconPlus = (p) => (
   </svg>
 );
 
-// Outward arrows (collapsed)
-const IconExpandOut = (p) => (
+// Single expand/collapse icon that flips based on `open`
+const ExpandIcon = ({ open, ...p }) => (
   <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}>
-    <path d="M3 9V3h6"/><path d="M3 3l7 7"/>
-    <path d="M21 9V3h-6"/><path d="M21 3l-7 7"/>
-    <path d="M3 15v6h6"/><path d="M3 21l7-7"/>
-    <path d="M21 15v6h-6"/><path d="M21 21l-7-7"/>
-  </svg>
-);
-
-// Inward arrows (expanded)
-const IconExpandIn = (p) => (
-  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}>
-    <path d="M10 10L3 3"/><path d="M9 3H3v6"/>
-    <path d="M14 10l7-7"/><path d="M15 3h6v6"/>
-    <path d="M10 14L3 21"/><path d="M3 15v6h6"/>
-    <path d="M14 14l7 7"/><path d="M21 15v6h-6"/>
+    {open ? (
+      // INWARD (collapse)
+      <>
+        {/* top-left pointing in */}
+        <path d="M10 10L3 3" />
+        <path d="M9 3H3v6" />
+        {/* top-right pointing in */}
+        <path d="M14 10l7-7" />
+        <path d="M15 3h6v6" />
+        {/* bottom-left pointing in */}
+        <path d="M10 14L3 21" />
+        <path d="M3 15v6h6" />
+        {/* bottom-right pointing in */}
+        <path d="M14 14l7 7" />
+        <path d="M21 15v6h-6" />
+      </>
+    ) : (
+      // OUTWARD (expand)
+      <>
+        {/* top-left */}
+        <path d="M3 9V3h6" />
+        <path d="M3 3l7 7" />
+        {/* top-right */}
+        <path d="M21 9V3h-6" />
+        <path d="M21 3l-7 7" />
+        {/* bottom-left */}
+        <path d="M3 15v6h6" />
+        <path d="M3 21l7-7" />
+        {/* bottom-right */}
+        <path d="M21 15v6h-6" />
+        <path d="M21 21l-7-7" />
+      </>
+    )}
   </svg>
 );
 
@@ -707,7 +726,7 @@ const [viewerProspectId, setViewerProspectId] = useState('');
   onClick={()=>toggleOpen(p.id)}
   className="border-gray-300 text-gray-700 hover:bg-gray-50"
 >
-  {isOpen ? <IconExpandIn key="in" /> : <IconExpandOut key="out" />}
+  <ExpandIcon open={isOpen} key={isOpen ? 'in' : 'out'} />
 </IconBtn>
 
             {/* header delete (uses custom confirm via removeP) */}
