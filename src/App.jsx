@@ -715,7 +715,7 @@ function Prospects({ prospects, setProspects, profile, saveProfile, activeProfil
               </div>
               <div>
                 <div className="text-xs mb-1">City</div>
-                <InlinePill label={p.city||''} placeholder="..." onEdit={(v)=>updateP(p.id,{city:v})} full />
+                <InlinePill label={p.city||''} placeholder="Enter city…" onEdit={(v)=>updateP(p.id,{city:v})} full />
               </div>
             </div>
 
@@ -810,7 +810,7 @@ function Prospects({ prospects, setProspects, profile, saveProfile, activeProfil
             <div className="mt-2">
               <div className="text-xs">Notes</div>
               <div className="relative">
-                <textarea className="border rounded p-2 w-full text-xs pr-12 select-text placeholder-gray-400" placeholder="..." rows={2} value={p.notes||''} onChange={e=>updateP(p.id,{notes:e.target.value})} />
+                <textarea className="border rounded p-2 w-full text-xs pr-12 select-text placeholder-gray-400" placeholder="Type notes…" rows={2} value={p.notes||''} onChange={e=>updateP(p.id,{notes:e.target.value})} />
                 <IconBtn ariaLabel="Share" label="Share" onClick={()=>shareText(p.notes||'')} className="absolute right-2 bottom-2 border-blue-300 text-blue-700 hover:bg-blue-50"><IconShare/></IconBtn>
               </div>
             </div>
@@ -1038,7 +1038,7 @@ function MyProfile({ profile, saveProfile }){
           <div className="mt-2 max-w-xl">
             <div className="text-xs">Blurb</div>
             <div className="relative">
-              <textarea className="border rounded p-2 w-full text-xs pr-12 select-text placeholder-gray-400" rows={2} value={selected.blurb || ''} onChange={e=>updateProfile(selected.id,{blurb:e.target.value})} placeholder="..." />
+              <textarea className="border rounded p-2 w-full text-xs pr-12 select-text placeholder-gray-400" rows={2} value={selected.blurb || ''} onChange={e=>updateProfile(selected.id,{blurb:e.target.value})} placeholder="Type blurb…" />
               <IconBtn ariaLabel="Share" label="Share" onClick={()=>shareText(selected.blurb||'')} className="absolute right-2 bottom-2 border-blue-300 text-blue-700 hover:bg-blue-50"><IconShare/></IconBtn>
             </div>
           </div>
