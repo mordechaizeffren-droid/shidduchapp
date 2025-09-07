@@ -632,6 +632,36 @@ function MyInfo({ profile, saveProfile, openViewer }){
     </div>
   );
 }
+function SyncPanel({ open, initial, onSave, onClear, onClose }) {
+  const [cfg, setCfg] = useState(initial?.config || "");
+  const [room, setRoom] = useState(initial?.room || "");
+  useEffect(() => { setCfg(initial?.config || ""); setRoom(initial?.room || ""); }, [initial, open]);
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-end md:items-center md:justify-center" onClick={onClose}>
+      <div className="bg-white w-full md:w-[28rem] rounded-t-2xl md:rounded-2xl p-4 shadow-lg" onClick={(e)=>e.stopPropagation()}>
+        <div className="text-lg font-semibold mb-2">Sync (optional)</div>
+        <p className="text-xs text-gray-500 mb-3">Paste the config token and enter a room name to enable sync between devices.</p>
+        <div className="space-y-2">
+          <div>
+            <div className="text-xs mb-1">Config token</div>
+            <input className="border rounded w-full px-2 py-1 text-sm" value={cfg} onChange={(e)=>setCfg(e.target.value)} placeholder="Paste token…"/>
+          </div>
+          <div>
+            <div className="text-xs mb-1">Room</div>
+            <input className="border rounded w-full px-2 py-1 text-sm" value={room} onChange={(e)=>setRoom(e.target.value)} placeholder="family-1"/>
+          </div>
+        </div>
+        <div className="mt-3 flex gap-2 justify-end">
+          <button type="button" className="px-3 py-1 rounded border" onClick={onClose}>Close</button>
+          <button type="button" className="px-3 py-1 rounded border" onClick={()=>{ onClear?.(); onClose(); }}>Clear</button>
+          <button type="button" className="px-3 py-1 rounded border bg-black text-white" onClick={()=>{ onSave?.({ config: cfg, room }); onClose(); }}>Save</button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ===== App (glue) =====
 export default function App(){
