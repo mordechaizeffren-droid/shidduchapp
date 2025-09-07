@@ -789,7 +789,7 @@ usePreviewCacheSweeper();
 
   return (
     <div className="p-4 max-w-4xl mx-auto text-sm">
-      <h1 className="text-xl font-semibold mb-3">Shidduch Organizer • v1.5 (Lite)</h1>
+      <h1 className="text-xl font-semibold mb-3">Shidduch Organizer • v2.0 (Lite)</h1>
 
       <div className="flex gap-2 mb-4 items-center">
         <button
