@@ -460,7 +460,7 @@ function Prospects({ prospects, setProspects, profile, saveProfile, activeKidId,
                 </div>
                 <div className="mt-2 border rounded p-3 grid grid-cols-2 gap-3 items-start">
                   <div><div className="text-xs mb-1">Suggested by</div><InlinePill label={p.sourceName||''} placeholder="" onEdit={(v)=>updateP(p.id,{sourceName:v})} full /></div>
-                  <div><div className="text-xs mb-1">Status</div><TrustSelect value={p.sourceTrust||''} onChange={(v)=>updateP(p.id,{sourceTrust:v})} /></div>
+                  <div><div className="text-xs mb-1">Trust</div><TrustSelect value={p.sourceTrust||''} onChange={(v)=>updateP(p.id,{sourceTrust:v})} /></div>
                 </div>
                 <div className="mt-2 grid grid-cols-1 gap-2 w-full">
                   <UploadBox emptyLabel="Add PDF" accept="application/pdf" file={p.resume} onPick={(ref)=>updateP(p.id,{resume:ref})} onShare={()=>p.resume && shareRef(p.resume,'resume')} onDownload={()=>p.resume && downloadRef(p.resume)} onClear={()=>{ if (p.resume) deleteFileRef(p.resume); updateP(p.id,{resume:null}); }} />
@@ -518,7 +518,7 @@ const [viewerFile, setViewerFile] = useState(null);
         ))}
         <button className="px-3 py-1 rounded-full border" onClick={addKid} aria-label="Add child">+</button>
       </div>
-      {kidMenu.open && (<div ref={menuRef} style={{position:'fixed', left:kidMenu.x, top:kidMenu.y, transform:'translateX(-50%)'}} className="z-50 rounded border bgwhite shadow">
+      {kidMenu.open && (<div ref={menuRef} style={{position:'fixed', left:kidMenu.x, top:kidMenu.y, transform:'translateX(-50%)'}} className="z-50 rounded border bg-white shadow">
   <button
     className="block w-full text-left px-3 py-2 text-red-600 hover:bg-red-50"
     onClick={deleteKid}
@@ -671,7 +671,6 @@ export default function App(){
   const [tab,setTab]=useState('prospects');
   const [profile,setProfile]=useState(null);
   const [prospects,setProspects]=useState([]);
-const [viewerFile, setViewerFile] = useState(null);
 const applyingRemoteRef = useRef(false);
 const lastAppliedRef = useRef(0);
   const [activeKidId, setActiveKidId] = useState('');
@@ -838,7 +837,7 @@ if (lastAppliedRef.current && Date.now() - lastAppliedRef.current < 800) return;
 
   return (
     <div className="p-4 max-w-4xl mx-auto text-sm">
-      <h1 className="text-xl font-semibold mb-3">Shidduch Organizer • v1.5 (Lite)</h1>
+      <h1 className="text-xl font-semibold mb-3">Shidduch Organizer • v2.0 (Lite)</h1>
 
       <div className="flex gap-2 mb-4 items-center">
         <button
@@ -896,4 +895,3 @@ if (lastAppliedRef.current && Date.now() - lastAppliedRef.current < 800) return;
     </div>
   );
 }
-
