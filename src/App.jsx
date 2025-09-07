@@ -318,6 +318,11 @@ function Viewer({ fileRef, startIndex=0, photos=[], onClose, onDeletePhoto }) {
   const currentUrl = useFilePreview(currentRef);
   const currentIsImg = (currentRef?.type || "").startsWith("image/");
   const currentIsPdf = (currentRef?.type || "").toLowerCase() === "application/pdf" || (currentRef?.name || "").toLowerCase().endsWith(".pdf");
+// iOS (includes iPadOS) detection for better PDF rendering
+const isIOS =
+  typeof navigator !== "undefined" &&
+  (/iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1));
 
   const goLeft  = () => { if (!canGallery || photos.length<2) return; setIdx((i)=> (i-1+photos.length)%photos.length); };
   const goRight = () => { if (!canGallery || photos.length<2) return; setIdx((i)=> (i+1)%photos.length); };
@@ -334,13 +339,14 @@ function Viewer({ fileRef, startIndex=0, photos=[], onClose, onDeletePhoto }) {
       aria-label="Viewer"
     >
       <div
-        className="max-w-[1000px] w-full max-h-[95vh] bg-white rounded-lg overflow-hidden relative"
-        onClick={(e) => e.stopPropagation()}
-        onTouchStart={onTouchStart}
-        onTouchMove={onTouchMove}
-        onTouchEnd={onTouchEnd}
-        style={{ transform: drag.active ? `translateY(${Math.max(0, drag.dy)}px)` : undefined, transition: drag.active ? 'none' : 'transform 160ms ease-out' }}
-      >
+  className="max-w-[1000px] w-full max-h-[95vh] bg-white rounded-lg overflow-hidden"
+  onClick={(e) => e.stopPropagation()}
+  onTouchStart={currentIsImg ? onTouchStart : undefined}
+  onTouchMove={currentIsImg ? onTouchMove : undefined}
+  onTouchEnd={currentIsImg ? onTouchEnd : undefined}
+  style={{ transform: drag.active ? `translateY(${Math.max(0, drag.dy)}px)` : undefined, transition: drag.active ? 'none' : 'transform 160ms ease-out' }}
+>
+
         {/* top grab strip */}
         <div className="h-5 flex items-center justify-center bg-gray-50">
           <div className="w-12 h-1.5 rounded-full bg-gray-300" />
@@ -364,8 +370,24 @@ function Viewer({ fileRef, startIndex=0, photos=[], onClose, onDeletePhoto }) {
             currentIsImg ? (
               <img src={currentUrl} alt={currentRef?.name || 'image'} className="w-full h-[85vh] object-contain select-none" draggable={false} />
             ) : currentIsPdf ? (
-              <iframe key={currentRef?.id || currentUrl} src={`${currentUrl}#view=FitH&zoom=page-fit`} title="Preview" className="w-full h-[85vh]" />
-            ) : (
+  isIOS ? (
+    <object
+      data={currentUrl}
+      type="application/pdf"
+      className="w-full h-[85vh]"
+      // allow pinch zoom/scroll on iOS
+      style={{ touchAction: 'pan-y pinch-zoom' }}
+    />
+  ) : (
+    <iframe
+      key={currentRef?.id || currentUrl}
+      src={currentUrl}  // no forced zoom params
+      title="Preview"
+      className="w-full h-[85vh]"
+    />
+  )
+) : (
+
               <div className="p-6 text-center text-sm text-gray-500">No inline preview available.</div>
             )
           ) : (
