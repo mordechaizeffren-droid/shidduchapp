@@ -64,22 +64,39 @@ const IconPlus = (p) => (
   </svg>
 );
 
-// Expand / Collapse icons (outward vs. inward)
+// Outward arrows (collapsed state)
 const IconExpandOut = (p) => (
-  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}>
-    <path d="M3 9V3h6"/><path d="M3 3l7 7"/>
-    <path d="M21 9V3h-6"/><path d="M21 3l-7 7"/>
-    <path d="M3 15v6h6"/><path d="M3 21l7-7"/>
-    <path d="M21 15v6h-6"/><path d="M21 21l-7-7"/>
+  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}>
+    {/* top-left */}
+    <path d="M3 9V3h6" />
+    <path d="M3 3l7 7" />
+    {/* top-right */}
+    <path d="M21 9V3h-6" />
+    <path d="M21 3l-7 7" />
+    {/* bottom-left */}
+    <path d="M3 15v6h6" />
+    <path d="M3 21l7-7" />
+    {/* bottom-right */}
+    <path d="M21 15v6h-6" />
+    <path d="M21 21l-7-7" />
   </svg>
 );
 
+// Inward arrows (expanded state)
 const IconExpandIn = (p) => (
-  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}>
-    <path d="M10 10L3 3"/><path d="M9 3H3v6"/>
-    <path d="M14 10l7-7"/><path d="M15 3h6v6"/>
-    <path d="M10 14L3 21"/><path d="M3 15v6h6"/>
-    <path d="M14 14l7 7"/><path d="M21 15v6h-6"/>
+  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}>
+    {/* top-left pointing in */}
+    <path d="M10 10L3 3" />
+    <path d="M9 3H3v6" />
+    {/* top-right pointing in */}
+    <path d="M14 10l7-7" />
+    <path d="M15 3h6v6" />
+    {/* bottom-left pointing in */}
+    <path d="M10 14L3 21" />
+    <path d="M3 15v6h6" />
+    {/* bottom-right pointing in */}
+    <path d="M14 14l7 7" />
+    <path d="M21 15v6h-6" />
   </svg>
 );
 
@@ -189,22 +206,43 @@ const DisplayPill = ({ children, tone = "bg-gray-100 text-gray-700 border-gray-2
 function useConfirm() {
   const [state, setState] = useState({ open: false, resolve: null });
   const ask = () => new Promise((resolve) => setState({ open: true, resolve }));
+
   const Confirm = state.open ? (
-    <div className="fixed inset-0 z-[2000] bg-black/40 flex items-center justify-center" onClick={() => { state.resolve(false); setState({ open: false, resolve: null }); }}>
-      <div className="bg-white rounded-lg shadow p-4 w-[18rem]" onClick={(e)=>e.stopPropagation()}>
+    <div
+      className="fixed inset-0 z-[5000] bg-black/40 flex items-center justify-center"
+      role="dialog"
+      aria-modal="true"
+      onClick={() => { state.resolve(false); setState({ open: false, resolve: null }); }}
+    >
+      <div
+        className="bg-white rounded-lg shadow p-4 w-[18rem]"
+        onClick={(e)=>e.stopPropagation()}
+      >
         <div className="text-sm">Are you sure?</div>
         <div className="mt-3 flex justify-end gap-2">
-          <button className="px-3 py-1 rounded border" onClick={()=>{ state.resolve(false); setState({ open:false, resolve:null }); }}>Cancel</button>
-          <button className="px-3 py-1 rounded border bg-rose-600 text-white" onClick={()=>{ state.resolve(true); setState({ open:false, resolve:null }); }}>Delete</button>
+          <button
+            className="px-3 py-1 rounded border"
+            onClick={()=>{ state.resolve(false); setState({ open:false, resolve:null }); }}
+          >
+            Cancel
+          </button>
+          <button
+            className="px-3 py-1 rounded border bg-rose-600 text-white"
+            onClick={()=>{ state.resolve(true); setState({ open:false, resolve:null }); }}
+          >
+            Delete
+          </button>
         </div>
       </div>
     </div>
   ) : null;
-  // ESC support
+
   useEffect(()=>{
     const onKey=(e)=>{ if(!state.open) return; if(e.key==='Escape'){ state.resolve(false); setState({open:false, resolve:null}); } };
-    window.addEventListener('keydown', onKey); return ()=>window.removeEventListener('keydown', onKey);
+    window.addEventListener('keydown', onKey); 
+    return ()=>window.removeEventListener('keydown', onKey);
   },[state]);
+
   return { ask, Confirm };
 }
 
