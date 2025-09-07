@@ -604,6 +604,7 @@ function Prospects({ prospects, setProspects, profile, saveProfile, activeProfil
             >
               {/* header with inline pills */}
              <div className="p-2 flex flex-wrap items-center gap-2">
+  {((p.updatedAt||0) > (unseenMap[p.id]||0)) && <span className="inline-block w-2 h-2 rounded-full bg-emerald-500" title="New/updated" />}
   <EditableText
     value={p.fullName || ''}
     placeholder="name..."
