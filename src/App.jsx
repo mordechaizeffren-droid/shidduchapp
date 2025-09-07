@@ -198,6 +198,7 @@ function useFilePreview(fileRef){
   return url;
 }
 
+// REPLACE the entire MiniPreview function with this:
 function MiniPreview({ fileRef }) {
   const url = useFilePreview(fileRef);
   const type = (fileRef?.type || "").toLowerCase();
@@ -208,12 +209,13 @@ function MiniPreview({ fileRef }) {
   return (
     <div className="w-full h-28 rounded-md bg-white border overflow-hidden">
       {isImg && url ? (
-        <img src={url} alt={fileRef.name || "image"} className="w-full h-full object-contain" />
+        <img src={url} alt={fileRef.name || "image"} className="w-full h-full object-contain" draggable={false} />
       ) : isPdf && url ? (
+        // pointer-events disabled so parent onClick works (tap-to-view)
         <iframe
           src={`${url}#view=FitH&zoom=page-fit`}
           title="Preview"
-          className="w-full h-full"
+          className="w-full h-full pointer-events-none"
         />
       ) : (
         <div className="w-full h-full flex items-center justify-center text-3xl text-gray-400">📄</div>
@@ -221,6 +223,7 @@ function MiniPreview({ fileRef }) {
     </div>
   );
 }
+
 
 function Viewer({ fileRef, startIndex=0, photos=[], onClose }) {
   const url = useFilePreview(fileRef);
@@ -425,6 +428,7 @@ function SyncPanel({ open, initial, onSave, onClear, onClose }) {
     </div>
   );
 }
+// REPLACE the entire Prospects component with this:
 function Prospects({ prospects, setProspects, profile, saveProfile, activeProfileId, setActiveProfileId, unseenMap, markSeen }){
   const profiles=ensureArray(profile?.profiles);
   const safe=ensureArray(prospects);
@@ -486,7 +490,6 @@ function Prospects({ prospects, setProspects, profile, saveProfile, activeProfil
     const name = base || '';
     const pid = activeProfileId || profiles[0].id;
     const p = { id: uid(), profileId: pid, fullName: name, status:'New', sourceName:'', sourceTrust:'', city:'', notes:'', photos:[], resume:null, updatedAt: Date.now() };
-    // Heuristic: images → photos; everything else → resume (override by tile drop elsewhere)
     if ((f.type||'').startsWith('image/')) p.photos = [ref]; else p.resume = ref;
     setProspects([...safe, p]);
     if (!localStorage.getItem("tip-expand-shown")) setShowTip(true);
@@ -551,7 +554,7 @@ function Prospects({ prospects, setProspects, profile, saveProfile, activeProfil
         <button className="px-3 py-1 rounded-full border" onClick={addProfile} aria-label="Add profile">+</button>
       </div>
 
-      {/* search + filter */}
+      {/* search + filter + Add */}
       <div className="flex items-center gap-2">
         <input className="border rounded px-2 py-1 text-sm flex-1 select-text" placeholder="Search name, city, notes..." value={q} onChange={e=>setQ(e.target.value)} />
         {pasteOn && (<input ref={pasteRef} onPaste={handlePaste} className="border rounded px-2 py-1 text-sm select-text" placeholder="Paste here…" aria-label="Paste here" />)}
@@ -580,35 +583,35 @@ function Prospects({ prospects, setProspects, profile, saveProfile, activeProfil
               className={`relative border rounded bg-white shadow-sm p-2 overflow-visible`}
               onDragOver={(e)=>e.preventDefault()}
             >
-              {/* header */}
-              <div className="p-2 flex items-center gap-2">
-                {/* unread green dot */}
+              {/* header with inline pills */}
+              <div className="p-2 flex flex-wrap items-center gap-2">
                 {(p.updatedAt || 0) > (unseenMap[p.id] || 0) ? <span className="inline-block w-2 h-2 rounded-full bg-emerald-500" title="New/updated" /> : <span className="w-2 h-2" />}
-                {/* editable name */}
                 <EditableText
                   value={p.fullName || ''}
                   placeholder="name..."
                   onChange={(v)=>updateP(p.id,{fullName:v})}
-                  className="font-medium truncate flex-1 text-left"
-                  inputClass="font-medium truncate flex-1 border rounded px-2 py-1 select-text"
+                  className="font-medium truncate"
+                  inputClass="font-medium truncate border rounded px-2 py-1 select-text"
                 />
-                {/* delete */}
-                <button
-                  type="button"
-                  aria-label="Delete"
-                  title="Delete"
-                  className="w-7 h-7 rounded-full border border-rose-300 text-rose-700 flex items-center justify-center hover:bg-rose-50"
-                  onClick={()=>removeP(p.id)}
-                >
-                  ×
-                </button>
-              </div>
-
-              {/* collapsed pills: Status → Suggested by → City */}
-              <div className="px-2 -mt-2 flex flex-wrap gap-2">
-                {p.status ? <DisplayPill tone={statusTone(p.status)}>{p.status}</DisplayPill> : null}
-                {(p.sourceName||'').trim() ? <DisplayPill>{p.sourceName}</DisplayPill> : null}
-                {(p.city||'').trim() ? <DisplayPill>{p.city}</DisplayPill> : null}
+                {/* quick glance pills (hidden when expanded) */}
+                {!isOpen && (
+                  <div className="flex items-center gap-2 flex-wrap ml-2">
+                    {p.status ? <DisplayPill tone={statusTone(p.status)}>{p.status}</DisplayPill> : null}
+                    {(p.sourceName||'').trim() ? <DisplayPill>{p.sourceName}</DisplayPill> : null}
+                    {(p.city||'').trim() ? <DisplayPill>{p.city}</DisplayPill> : null}
+                  </div>
+                )}
+                <div className="ml-auto flex items-center gap-2">
+                  <button
+                    type="button"
+                    aria-label="Delete"
+                    title="Delete"
+                    className="w-7 h-7 rounded-full border border-rose-300 text-rose-700 flex items-center justify-center hover:bg-rose-50"
+                    onClick={()=>removeP(p.id)}
+                  >
+                    ×
+                  </button>
+                </div>
               </div>
 
               {/* details (animated) */}
@@ -640,7 +643,7 @@ function Prospects({ prospects, setProspects, profile, saveProfile, activeProfil
                     </div>
                   </div>
 
-                  {/* two columns: resume & photos */}
+                  {/* two columns: resume & photos (smaller tiles) */}
                   <div className="mt-2 grid grid-cols-2 gap-2 w-full">
                     {/* Resume */}
                     <div
@@ -649,8 +652,8 @@ function Prospects({ prospects, setProspects, profile, saveProfile, activeProfil
                     >
                       <div className="text-xs mb-1">Resume</div>
                       {p.resume ? (
-                        <div className="group cursor-pointer" onClick={()=>{ setViewerFile(p.resume); setViewerPhotos([]); setViewerIndex(0); }}>
-                          <MiniPreview fileRef={p.resume} />
+                        <div className="group cursor-pointer inline-block" onClick={()=>{ setViewerFile(p.resume); setViewerPhotos([]); setViewerIndex(0); }}>
+                          <div className="w-40"><MiniPreview fileRef={p.resume} /></div>
                           <div className="flex items-center gap-2 mt-2">
                             <IconBtn ariaLabel="Share" label="Share" onClick={(e)=>{ e.stopPropagation(); shareRef(p.resume,'resume'); }} className="border-blue-300 text-blue-700 hover:bg-blue-50"><IconShare/></IconBtn>
                             <IconBtn ariaLabel="Download" label="Download" onClick={(e)=>{ e.stopPropagation(); downloadRef(p.resume); }} className="border-emerald-300 text-emerald-700 hover:bg-emerald-50"><IconDownload/></IconBtn>
@@ -661,7 +664,7 @@ function Prospects({ prospects, setProspects, profile, saveProfile, activeProfil
                         <button
                           type="button"
                           onClick={()=>document.getElementById(`file-resume-${p.id}`)?.click()}
-                          className="h-28 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 w-full flex flex-col items-center justify-center"
+                          className="h-28 w-40 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 flex flex-col items-center justify-center"
                         >
                           <div className="text-3xl leading-none text-gray-400">+</div>
                           <div className="text-xs text-gray-500 mt-1">Add resume</div>
@@ -670,54 +673,49 @@ function Prospects({ prospects, setProspects, profile, saveProfile, activeProfil
                       )}
                     </div>
 
-                    {/* Photos */}
+                    {/* Photos — single box + tiny sliver + small "+" overlay */}
                     <div
                       onDrop={async(e)=>{ e.preventDefault(); const files = Array.from(e.dataTransfer?.files||[]).filter(f=> (f.type||'').startsWith('image/')); if(files.length){ for(const f of files){ const ref=await attachFile(f); updateP(p.id,{photos:[...(p.photos||[]), ref]}); }} }}
                       onDragOver={(e)=>e.preventDefault()}
                     >
                       <div className="text-xs mb-1">Photos</div>
-                      <div className="flex items-center gap-2">
-                        {ensureArray(p.photos).length ? (
-                          <div className="relative cursor-pointer" onClick={()=>{ setViewerPhotos(p.photos||[]); setViewerIndex(0); setViewerFile(p.photos?.[0]); }}>
-                            <div className="w-40 h-28 rounded-md bg-white border overflow-hidden">
+
+                      <div className="relative inline-block">
+                        {/* sliver of second photo (peek) */}
+                        {p.photos?.[1] && (
+                          <div className="absolute left-2 top-2 w-40 h-28 rounded-md bg-white border overflow-hidden opacity-70 pointer-events-none -z-0">
+                            <MiniPreview fileRef={p.photos[1]} />
+                          </div>
+                        )}
+
+                        {/* main photo box OR add box if empty */}
+                        {p.photos?.[0] ? (
+                          <div className="relative z-10">
+                            <div className="w-40 h-28 rounded-md bg-white border overflow-hidden cursor-pointer"
+                              onClick={()=>{ setViewerPhotos(p.photos||[]); setViewerIndex(0); setViewerFile(p.photos?.[0]); }}>
                               <MiniPreview fileRef={p.photos[0]} />
                             </div>
-                            {p.photos.length > 1 && (
-                              <div className="absolute -right-2 top-2 w-20 h-14 border rounded-md overflow-hidden bg-white shadow-sm">
-                                <MiniPreview fileRef={p.photos[1]} />
-                              </div>
-                            )}
+                            {/* small + overlay */}
+                            <button
+                              type="button"
+                              onClick={()=>document.getElementById(`file-photos-${p.id}`)?.click()}
+                              className="absolute -bottom-3 -right-3 z-20 w-8 h-8 rounded-full border bg-white shadow flex items-center justify-center"
+                              title="Add photo"
+                            >+</button>
                           </div>
-                        ) : null}
-
-                        <button
-                          type="button"
-                          onClick={()=>document.getElementById(`file-photos-${p.id}`)?.click()}
-                          className="h-28 w-28 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 flex flex-col items-center justify-center"
-                          title="Add photos"
-                        >
-                          <div className="text-3xl leading-none text-gray-400">+</div>
-                          <div className="text-[11px] text-gray-500 mt-1">Add photos</div>
-                          <input id={`file-photos-${p.id}`} type="file" accept="image/*" multiple className="hidden" onChange={async(e)=>{ const fs=Array.from(e.target.files||[]); if(fs.length){ const refs=[]; for(const f of fs){ refs.push(await attachFile(f)); } updateP(p.id,{photos:[...(p.photos||[]), ...refs]}); } e.target.value=""; }} />
-                        </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={()=>document.getElementById(`file-photos-${p.id}`)?.click()}
+                            className="h-28 w-40 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 flex flex-col items-center justify-center"
+                            title="Add photos"
+                          >
+                            <div className="text-3xl leading-none text-gray-400">+</div>
+                            <div className="text-[11px] text-gray-500 mt-1">Add photos</div>
+                          </button>
+                        )}
+                        <input id={`file-photos-${p.id}`} type="file" accept="image/*" multiple className="hidden" onChange={async(e)=>{ const fs=Array.from(e.target.files||[]); if(fs.length){ const refs=[]; for(const f of fs){ refs.push(await attachFile(f)); } updateP(p.id,{photos:[...(p.photos||[]), ...refs]}); } e.target.value=""; }} />
                       </div>
-
-                      {ensureArray(p.photos).length ? (
-                        <div className="mt-2 flex flex-wrap gap-2">
-                          {p.photos.map((ph, i)=>(
-                            <div key={ph.id} className="relative">
-                              <div className="w-24 h-16 border rounded overflow-hidden cursor-pointer" onClick={()=>{ setViewerPhotos(p.photos||[]); setViewerIndex(i); setViewerFile(ph); }}>
-                                <MiniPreview fileRef={ph} />
-                              </div>
-                              <button className="absolute -top-2 -right-2 w-6 h-6 rounded-full border border-rose-300 bg-white text-rose-700 flex items-center justify-center"
-                                title="Delete photo"
-                                onClick={async()=>{ const ok=await askConfirm(); if(!ok) return; await deleteFileRef(ph); const next = (p.photos||[]).filter(x=>x.id!==ph.id); updateP(p.id,{photos:next}); }}
-                              >×</button>
-                            </div>
-                          ))}
-                        </div>
-                      ) : null}
-
                     </div>
                   </div>
 
@@ -743,23 +741,22 @@ function Prospects({ prospects, setProspects, profile, saveProfile, activeProfil
                 </div>
               </div>
 
-              {/* hanging expand tab (both states) */}
+              {/* circular hanging tab (visible in both states) */}
               <button
                 type="button"
                 aria-label={isOpen ? "Collapse details" : "Expand details"}
                 title={isOpen ? "Collapse" : "Expand"}
                 onClick={()=>toggleOpen(p.id)}
-                className="absolute right-2 -bottom-3 w-[44px] h-[32px] bg-white border rounded-t-md shadow-sm flex items-center justify-center hover:bg-gray-50"
-                style={{ borderBottom: 'none' }}
+                className="absolute right-4 -bottom-5 w-10 h-10 bg-white border rounded-full shadow flex items-center justify-center"
               >
-                <span className="text-sm">{isOpen ? '^' : 'v'}</span>
+                <span className="text-base leading-none">{isOpen ? '^' : 'v'}</span>
               </button>
             </div>
           );
         })}
 
-        {/* Add card */}
-        <button type="button" onClick={addProspect} className="h-40 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 flex flex-col items-center justify-center">
+        {/* Add prospect tile — smaller */}
+        <button type="button" onClick={addProspect} className="h-28 w-40 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 flex flex-col items-center justify-center">
           <div className="text-4xl leading-none text-gray-400">+</div>
           <div className="text-xs text-gray-500 mt-1">Add resume</div>
         </button>
@@ -771,6 +768,7 @@ function Prospects({ prospects, setProspects, profile, saveProfile, activeProfil
     </div>
   );
 }
+
 // ===== Inline editors & selects =====
 function StatusPill({ value, onChange }){
   const [open,setOpen]=useState(false); const [alignRight,setAlignRight]=useState(false); const ref=useRef(null);
@@ -822,6 +820,7 @@ function EditableText({ value, onChange, className, inputClass, placeholder="nam
 }
 
 // ===== My Profile =====
+// REPLACE the entire MyProfile component with this:
 function MyProfile({ profile, saveProfile }){
   const profiles=ensureArray(profile?.profiles);
   const [viewerFile, setViewerFile] = useState(null);
@@ -872,12 +871,12 @@ function MyProfile({ profile, saveProfile }){
       {selected ? (
         <>
           <div className="grid grid-cols-2 gap-2">
-            {/* Resume */}
+            {/* Resume — same size as Photos */}
             <div>
               <div className="text-xs mb-1">Resume</div>
               {selected.resume ? (
-                <div className="group cursor-pointer" onClick={()=>{ setViewerFile(selected.resume); setViewerPhotos([]); setViewerIndex(0); }}>
-                  <MiniPreview fileRef={selected.resume} />
+                <div className="group cursor-pointer inline-block" onClick={()=>{ setViewerFile(selected.resume); setViewerPhotos([]); setViewerIndex(0); }}>
+                  <div className="w-40"><MiniPreview fileRef={selected.resume} /></div>
                   <div className="flex items-center gap-2 mt-2">
                     <IconBtn ariaLabel="Share" label="Share" onClick={(e)=>{ e.stopPropagation(); shareRef(selected.resume,'resume'); }} className="border-blue-300 text-blue-700 hover:bg-blue-50"><IconShare/></IconBtn>
                     <IconBtn ariaLabel="Download" label="Download" onClick={(e)=>{ e.stopPropagation(); downloadRef(selected.resume); }} className="border-emerald-300 text-emerald-700 hover:bg-emerald-50"><IconDownload/></IconBtn>
@@ -888,7 +887,7 @@ function MyProfile({ profile, saveProfile }){
                 <button
                   type="button"
                   onClick={()=>document.getElementById(`profile-resume-${selected.id}`)?.click()}
-                  className="h-28 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 w-full flex flex-col items-center justify-center"
+                  className="h-28 w-40 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 flex flex-col items-center justify-center"
                 >
                   <div className="text-3xl leading-none text-gray-400">+</div>
                   <div className="text-xs text-gray-500 mt-1">Add resume</div>
@@ -897,49 +896,42 @@ function MyProfile({ profile, saveProfile }){
               )}
             </div>
 
-            {/* Photos */}
+            {/* Photos — single box + tiny sliver + small "+" */}
             <div>
               <div className="text-xs mb-1">Photos</div>
-              <div className="flex items-center gap-2">
-                {ensureArray(selected.photos).length ? (
-                  <div className="relative cursor-pointer" onClick={()=>{ setViewerPhotos(selected.photos||[]); setViewerIndex(0); setViewerFile(selected.photos?.[0]); }}>
-                    <div className="w-40 h-28 rounded-md bg-white border overflow-hidden">
+
+              <div className="relative inline-block">
+                {selected.photos?.[1] && (
+                  <div className="absolute left-2 top-2 w-40 h-28 rounded-md bg-white border overflow-hidden opacity-70 pointer-events-none -z-0">
+                    <MiniPreview fileRef={selected.photos[1]} />
+                  </div>
+                )}
+
+                {selected.photos?.[0] ? (
+                  <div className="relative z-10">
+                    <div className="w-40 h-28 rounded-md bg-white border overflow-hidden cursor-pointer"
+                      onClick={()=>{ setViewerPhotos(selected.photos||[]); setViewerIndex(0); setViewerFile(selected.photos?.[0]); }}>
                       <MiniPreview fileRef={selected.photos[0]} />
                     </div>
-                    {selected.photos.length > 1 && (
-                      <div className="absolute -right-2 top-2 w-20 h-14 border rounded-md overflow-hidden bg-white shadow-sm">
-                        <MiniPreview fileRef={selected.photos[1]} />
-                      </div>
-                    )}
+                    <button
+                      type="button"
+                      onClick={()=>document.getElementById(`profile-photos-${selected.id}`)?.click()}
+                      className="absolute -bottom-3 -right-3 z-20 w-8 h-8 rounded-full border bg-white shadow flex items-center justify-center"
+                      title="Add photo"
+                    >+</button>
                   </div>
-                ) : null}
-
-                <button
-                  type="button"
-                  onClick={()=>document.getElementById(`profile-photos-${selected.id}`)?.click()}
-                  className="h-28 w-28 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 flex flex-col items-center justify-center"
-                >
-                  <div className="text-3xl leading-none text-gray-400">+</div>
-                  <div className="text-[11px] text-gray-500 mt-1">Add photos</div>
-                  <input id={`profile-photos-${selected.id}`} type="file" accept="image/*" multiple className="hidden" onChange={async(e)=>{ const fs=Array.from(e.target.files||[]); if(fs.length){ const refs=[]; for(const f of fs){ refs.push(await attachFile(f)); } updateProfile(selected.id,{photos:[...(selected.photos||[]), ...refs]}); } e.target.value=""; }} />
-                </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={()=>document.getElementById(`profile-photos-${selected.id}`)?.click()}
+                    className="h-28 w-40 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 flex flex-col items-center justify-center"
+                  >
+                    <div className="text-3xl leading-none text-gray-400">+</div>
+                    <div className="text-[11px] text-gray-500 mt-1">Add photos</div>
+                  </button>
+                )}
+                <input id={`profile-photos-${selected.id}`} type="file" accept="image/*" multiple className="hidden" onChange={async(e)=>{ const fs=Array.from(e.target.files||[]); if(fs.length){ const refs=[]; for(const f of fs){ refs.push(await attachFile(f)); } updateProfile(selected.id,{photos:[...(selected.photos||[]), ...refs]}); } e.target.value=""; }} />
               </div>
-
-              {ensureArray(selected.photos).length ? (
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {selected.photos.map((ph, i)=>(
-                    <div key={ph.id} className="relative">
-                      <div className="w-24 h-16 border rounded overflow-hidden cursor-pointer" onClick={()=>{ setViewerPhotos(selected.photos||[]); setViewerIndex(i); setViewerFile(ph); }}>
-                        <MiniPreview fileRef={ph} />
-                      </div>
-                      <button className="absolute -top-2 -right-2 w-6 h-6 rounded-full border border-rose-300 bg-white text-rose-700 flex items-center justify-center"
-                        title="Delete photo"
-                        onClick={async()=>{ const ok=await askConfirm(); if(!ok) return; await deleteFileRef(ph); const next = (selected.photos||[]).filter(x=>x.id!==ph.id); updateProfile(selected.id,{photos:next}); }}
-                      >×</button>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
             </div>
 
             {/* Viewer + Confirm */}
@@ -947,8 +939,8 @@ function MyProfile({ profile, saveProfile }){
             {Confirm}
           </div>
 
-          {/* Blurb */}
-          <div className="mt-2">
+          {/* Blurb — not full width */}
+          <div className="mt-2 max-w-xl">
             <div className="text-xs">Blurb</div>
             <div className="relative">
               <textarea className="border rounded p-2 w-full text-xs pr-12 select-text placeholder-gray-400" rows={2} value={selected.blurb || ''} onChange={e=>updateProfile(selected.id,{blurb:e.target.value})} placeholder="..." />
@@ -956,7 +948,7 @@ function MyProfile({ profile, saveProfile }){
             </div>
           </div>
 
-          {/* Share all (bottom) — must have at least 2 of resume/photos/blurb */}
+          {/* Share all */}
           {(() => {
             let count = 0; if (selected.resume) count++; if ((selected.photos||[]).length) count++; if ((selected.blurb||'').trim()) count++;
             return count >= 2 ? (
@@ -1194,29 +1186,30 @@ export default function App(){
       <div className="text-xs text-gray-500 mb-1">Shidduch Organizer • v2.0 (Lite)</div>
 
       {/* Folder Tabs */}
-      <div role="tablist" aria-label="Sections" className="mb-4 border-b">
-        <div className="flex items-end gap-2">
-          <button
-            role="tab"
-            aria-selected={tab==='prospects'}
-            className={`px-3 py-2 rounded-t-lg border ${tab==='prospects' ? 'bg-white border-b-white' : 'bg-gray-50 text-gray-700'} -mb-px`}
-            onClick={()=>setTab('prospects')}
-          >
-            Resumes
-          </button>
+      {/* Folder Tabs */}
+<div role="tablist" aria-label="Sections" className="mb-4 border-b">
+  <div className="flex items-end gap-2">
+    <button
+      role="tab"
+      aria-selected={tab==='prospects'}
+      className={`px-3 py-2 rounded-t-lg border -mb-px transition-shadow ${tab==='prospects' ? 'bg-white border-b-white shadow-md' : 'bg-gray-50 text-gray-700 hover:shadow-sm'}`}
+      onClick={()=>setTab('prospects')}
+    >
+      Resumes
+    </button>
 
-          <div className="flex-1" />
+    <div className="flex-1" />
 
-          <button
-            role="tab"
-            aria-selected={tab==='profile'}
-            className={`px-3 py-2 rounded-t-lg border ${tab==='profile' ? 'bg-white border-b-white' : 'bg-gray-50 text-gray-700'} -mb-px`}
-            onClick={()=>setTab('profile')}
-          >
-            My Profile
-          </button>
-        </div>
-      </div>
+    <button
+      role="tab"
+      aria-selected={tab==='profile'}
+      className={`px-3 py-2 rounded-t-lg border -mb-px transition-shadow ${tab==='profile' ? 'bg-white border-b-white shadow-md' : 'bg-gray-50 text-gray-700 hover:shadow-sm'}`}
+      onClick={()=>setTab('profile')}
+    >
+      My Profile
+    </button>
+  </div>
+</div>
 
       {/* Settings (gear) */}
       <div className="mb-4">
