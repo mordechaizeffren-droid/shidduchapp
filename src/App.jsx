@@ -630,12 +630,12 @@ function Prospects({ prospects, setProspects, profile, saveProfile, activeProfil
 
   <div className="ml-auto flex items-center gap-2">
     {/* expand / collapse icon next to X */}
-    <IconBtn
-      ariaLabel={expanded[p.id] ? "Collapse" : "Expand"}
-      label={expanded[p.id] ? "Collapse" : "Expand"}
-      onClick={()=>toggleOpen(p.id)}
-      className="border-gray-300 text-gray-700 hover:bg-gray-50"
-    >
+   <IconBtn
+  ariaLabel={expanded[p.id] ? "Collapse" : "Expand"}
+  label={expanded[p.id] ? "Collapse" : "Expand"}
+  onClick={()=>toggleOpen(p.id)}
+  className="w-10 h-10 border-gray-300 text-gray-700 hover:bg-gray-50"
+>
       {expanded[p.id] ? <IconExpandIn/> : <IconExpandOut/>}
     </IconBtn>
 
@@ -703,7 +703,7 @@ function Prospects({ prospects, setProspects, profile, saveProfile, activeProfil
                         <button
                           type="button"
                           onClick={()=>document.getElementById(`file-resume-${p.id}`)?.click()}
-                          className="h-28 w-40 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 flex flex-col items-center justify-center"
+                          className="h-28 w-40 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 shadow-sm flex flex-col items-center justify-center"
                         >
                           <div className="text-3xl leading-none text-gray-400">+</div>
                           <div className="text-xs text-gray-500 mt-1">Add resume</div>
@@ -764,7 +764,7 @@ function Prospects({ prospects, setProspects, profile, saveProfile, activeProfil
                           <button
                             type="button"
                             onClick={()=>document.getElementById(`file-photos-${p.id}`)?.click()}
-                            className="h-28 w-40 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 flex flex-col items-center justify-center"
+                            className="h-28 w-40 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 shadow-sm flex flex-col items-center justify-center"
                             title="Add photos"
                           >
                             <div className="text-3xl leading-none text-gray-400">+</div>
@@ -804,7 +804,7 @@ function Prospects({ prospects, setProspects, profile, saveProfile, activeProfil
         })}
 
         {/* Add prospect tile — smaller */}
-        <button type="button" onClick={addProspect} className="h-28 w-40 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 flex flex-col items-center justify-center">
+        <button type="button" onClick={addProspect} className="h-28 w-40 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 shadow-sm flex flex-col items-center justify-center">
           <div className="text-4xl leading-none text-gray-400">+</div>
           <div className="text-xs text-gray-500 mt-1">Add resume</div>
         </button>
@@ -935,7 +935,7 @@ function MyProfile({ profile, saveProfile }){
                 <button
                   type="button"
                   onClick={()=>document.getElementById(`profile-resume-${selected.id}`)?.click()}
-                  className="h-28 w-40 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 flex flex-col items-center justify-center"
+                  className="h-28 w-40 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 shadow-sm flex flex-col items-center justify-center"
                 >
                   <div className="text-3xl leading-none text-gray-400">+</div>
                   <div className="text-xs text-gray-500 mt-1">Add resume</div>
@@ -990,7 +990,7 @@ function MyProfile({ profile, saveProfile }){
                   <button
                     type="button"
                     onClick={()=>document.getElementById(`profile-photos-${selected.id}`)?.click()}
-                    className="h-28 w-40 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 flex flex-col items-center justify-center"
+                    className="h-28 w-40 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 shadow-sm flex flex-col items-center justify-center"
                   >
                     <div className="text-3xl leading-none text-gray-400">+</div>
                     <div className="text-[11px] text-gray-500 mt-1">Add photos</div>
@@ -1247,33 +1247,45 @@ export default function App(){
   };
 
   return (
-    <div className="p-4 max-w-4xl mx-auto text-sm select-none">
+    <div className="p-4 max-w-4xl mx-auto text-sm select-none" style={{ WebkitTapHighlightColor: 'transparent' }}>
       {/* Version label */}
       <div className="text-xs text-gray-500 mb-1">Shidduch Organizer • v2.0 (Lite)</div>
 
-      {/* Folder Tabs */}
-      {/* Folder Tabs */}
-<div role="tablist" aria-label="Sections" className="mb-4 border-b">
-  <div className="flex items-end gap-2">
-    <button
-      role="tab"
-      aria-selected={tab==='prospects'}
-      className={`px-3 py-2 rounded-t-lg border -mb-px transition-shadow ${tab==='prospects' ? 'bg-white border-b-white shadow-md' : 'bg-gray-50 text-gray-700 hover:shadow-sm'}`}
-      onClick={()=>setTab('prospects')}
-    >
-      Resumes
-    </button>
+            {/* Folder Tabs (lifted) */}
+<div role="tablist" aria-label="Sections" className="mb-4">
+  <div className="relative">
+    {/* subtle baseline under tabs */}
+    <div className="absolute inset-x-0 bottom-0 h-px bg-gray-200" />
 
-    <div className="flex-1" />
+    <div className="flex items-end gap-2">
+      <button
+        role="tab"
+        aria-selected={tab==='prospects'}
+        className={`px-3 py-2 rounded-t-xl border border-b-0 transition-all
+          ${tab==='prospects'
+            ? 'bg-gradient-to-b from-white to-gray-50 shadow-lg ring-1 ring-black/5 translate-y-[1px]'
+            : 'bg-gray-50 text-gray-700 hover:shadow-sm'
+          }`}
+        onClick={()=>setTab('prospects')}
+      >
+        Resumes
+      </button>
 
-    <button
-      role="tab"
-      aria-selected={tab==='profile'}
-      className={`px-3 py-2 rounded-t-lg border -mb-px transition-shadow ${tab==='profile' ? 'bg-white border-b-white shadow-md' : 'bg-gray-50 text-gray-700 hover:shadow-sm'}`}
-      onClick={()=>setTab('profile')}
-    >
-      My Profile
-    </button>
+      <div className="flex-1" />
+
+      <button
+        role="tab"
+        aria-selected={tab==='profile'}
+        className={`px-3 py-2 rounded-t-xl border border-b-0 transition-all
+          ${tab==='profile'
+            ? 'bg-gradient-to-b from-white to-gray-50 shadow-lg ring-1 ring-black/5 translate-y-[1px]'
+            : 'bg-gray-50 text-gray-700 hover:shadow-sm'
+          }`}
+        onClick={()=>setTab('profile')}
+      >
+        My Profile
+      </button>
+    </div>
   </div>
 </div>
 
