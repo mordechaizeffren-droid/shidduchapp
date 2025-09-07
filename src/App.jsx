@@ -369,6 +369,7 @@ function Prospects({ prospects, setProspects, profile, saveProfile, activeKidId,
   const [expanded,setExpanded]=useState({});
   const [pasteOn,setPasteOn]=useState(false);
   const pasteRef = useRef(null);
+  const [viewerFile, setViewerFile] = useState(null); // NEW: local viewer for Prospects
 
   // Clipboard API try, else show visible paste input
   const tryClipboardApi = async () => {
@@ -408,6 +409,7 @@ function Prospects({ prospects, setProspects, profile, saveProfile, activeKidId,
     const p = { id: uid(), kidId: pid, fullName: name, status:'New', sourceName:'', sourceTrust:'', city:'', notes:'', photo:null, resume:null, updatedAt: Date.now() };
     if ((f.type||'').startsWith('image/')) p.photo = ref; else p.resume = ref;
     setProspects([...safe, p]);
+    setViewerFile(ref); // open viewer immediately
   };
   useEffect(()=>{ const h=()=>quickRef.current?.click(); window.addEventListener('open-quick-add', h); return ()=>window.removeEventListener('open-quick-add', h); },[]);
 
@@ -416,7 +418,7 @@ function Prospects({ prospects, setProspects, profile, saveProfile, activeKidId,
   const addProspect=()=>{ if(!kids.length){ alert('Add a child first in My Info'); return; } const p={ id:uid(), kidId:activeKidId||kids[0].id, fullName:'Untitled', status:'New', sourceName:'', sourceTrust:'', city:'', notes:'', photo:null, resume:null, updatedAt:Date.now() }; setProspects([...safe,p]); };
   const updateP=(id,patch)=> setProspects(safe.map(x=> x.id===id?{...x,...patch, updatedAt:Date.now()}:x));
   const removeP=(id)=> setProspects(safe.filter(x=>x.id!==id));
-  const onDropFiles=async(pid, files)=>{ if(!files||!files.length) return; for(const f of Array.from(files)){ const ref=await attachFile(f); if(!ref) continue; if((f.type||'').startsWith('image/')) updateP(pid,{photo:ref}); else if(f.type==='application/pdf'||(f.name||'').toLowerCase().endsWith('.pdf')) updateP(pid,{resume:ref}); } };
+  const onDropFiles=async(pid, files)=>{ if(!files||!files.length) return; for(const f of Array.from(files)){ const ref=await attachFile(f); if(!ref) continue; if((f.type||'').startsWith('image/')) updateP(pid,{photo:ref}); else if(f.type==='application/pdf'||(f.name||'').toLowerCase().endsWith('.pdf')) updateP(pid,{resume:ref}); setViewerFile(ref); } };
 
   const filtered = safe
     .filter(p=>!activeKidId || p.kidId===activeKidId)
@@ -443,9 +445,11 @@ function Prospects({ prospects, setProspects, profile, saveProfile, activeKidId,
       <div className="grid grid-cols-1 gap-2 w-full">
         {filtered.map(p=> (
           <div
-  key={p.id}
-  className={`border rounded bg-white shadow-sm ${expanded[p.id] ? 'p-4' : 'p-2'}`}
- onDragOver={(e)=>e.preventDefault()} onDrop={async(e)=>{ e.preventDefault(); await onDropFiles(p.id, e.dataTransfer?.files||null); }}>
+            key={p.id}
+            className={`border rounded bg-white shadow-sm ${expanded[p.id] ? 'p-4' : 'p-2'}`}
+            onDragOver={(e)=>e.preventDefault()}
+            onDrop={async(e)=>{ e.preventDefault(); await onDropFiles(p.id, e.dataTransfer?.files||null); }}
+          >
             <div className="p-2 flex items-center gap-2">
               <EditableText value={p.fullName} onChange={(v)=>updateP(p.id,{fullName:v||'Untitled'})} className="font-medium truncate flex-1" inputClass="font-medium truncate flex-1 border rounded px-2 py-1" />
               {p.city ? <span className="text-xs text-gray-500 truncate max-w-[6rem]">{p.city}</span> : null}
@@ -460,11 +464,27 @@ function Prospects({ prospects, setProspects, profile, saveProfile, activeKidId,
                 </div>
                 <div className="mt-2 border rounded p-3 grid grid-cols-2 gap-3 items-start">
                   <div><div className="text-xs mb-1">Suggested by</div><InlinePill label={p.sourceName||''} placeholder="" onEdit={(v)=>updateP(p.id,{sourceName:v})} full /></div>
-                  <div><div className="text-xs mb-1">Trust</div><TrustSelect value={p.sourceTrust||''} onChange={(v)=>updateP(p.id,{sourceTrust:v})} /></div>
+                  <div><div className="text-xs mb-1">known status</div><TrustSelect value={p.sourceTrust||''} onChange={(v)=>updateP(p.id,{sourceTrust:v})} /></div>
                 </div>
                 <div className="mt-2 grid grid-cols-1 gap-2 w-full">
-                  <UploadBox emptyLabel="Add PDF" accept="application/pdf" file={p.resume} onPick={(ref)=>updateP(p.id,{resume:ref})} onShare={()=>p.resume && shareRef(p.resume,'resume')} onDownload={()=>p.resume && downloadRef(p.resume)} onClear={()=>{ if (p.resume) deleteFileRef(p.resume); updateP(p.id,{resume:null}); }} />
-                  <UploadBox emptyLabel="Add photo" accept="image/*" file={p.photo} onPick={(ref)=>updateP(p.id,{photo:ref})} onShare={()=>p.photo && shareRef(p.photo,'photo')} onDownload={()=>p.photo && downloadRef(p.photo)} onClear={()=>{ if (p.photo) deleteFileRef(p.photo); updateP(p.id,{photo:null}); }} />
+                  <UploadBox
+                    emptyLabel="Add PDF"
+                    file={p.resume}
+                    onPick={(ref)=>{ updateP(p.id,{resume:ref}); setViewerFile(ref); }}
+                    onShare={()=>p.resume && shareRef(p.resume,'resume')}
+                    onDownload={()=>p.resume && downloadRef(p.resume)}
+                    onClear={()=>{ if (p.resume) deleteFileRef(p.resume); updateP(p.id,{resume:null}); }}
+                    onOpen={(ref)=> setViewerFile(ref)}
+                  />
+                  <UploadBox
+                    emptyLabel="Add photo"
+                    file={p.photo}
+                    onPick={(ref)=>{ updateP(p.id,{photo:ref}); setViewerFile(ref); }}
+                    onShare={()=>p.photo && shareRef(p.photo,'photo')}
+                    onDownload={()=>p.photo && downloadRef(p.photo)}
+                    onClear={()=>{ if (p.photo) deleteFileRef(p.photo); updateP(p.id,{photo:null}); }}
+                    onOpen={(ref)=> setViewerFile(ref)}
+                  />
                 </div>
                 <div className="mt-2">
                   <div className="text-xs">Notes</div>
@@ -485,6 +505,9 @@ function Prospects({ prospects, setProspects, profile, saveProfile, activeKidId,
           <div className="text-xs text-gray-500 mt-1">Add resume</div>
         </button>
       </div>
+
+      {/* Viewer for Prospects */}
+      {viewerFile && (<Viewer fileRef={viewerFile} onClose={()=> setViewerFile(null)} />)}
     </div>
   );
 }
@@ -492,7 +515,7 @@ function Prospects({ prospects, setProspects, profile, saveProfile, activeKidId,
 // ===== My Info =====
 function MyInfo({ profile, saveProfile }){
   const kids=ensureArray(profile?.kids);
-const [viewerFile, setViewerFile] = useState(null);
+  const [viewerFile, setViewerFile] = useState(null);
   const [selId,setSelId]=useState(kids[0]?.id||'');
   useEffect(()=>{ setSelId(kids[0]?.id||''); },[profile?.kids]);
   const addKid=()=>{ const newKid={ id:uid(), name:'', photo:null, resume:null, updatedAt:Date.now() }; const next=[...kids,newKid]; saveProfile({ ...(profile||{}), kids:next, updatedAt:Date.now() }); setSelId(newKid.id); };
@@ -518,97 +541,92 @@ const [viewerFile, setViewerFile] = useState(null);
         ))}
         <button className="px-3 py-1 rounded-full border" onClick={addKid} aria-label="Add child">+</button>
       </div>
-      {kidMenu.open && (<div ref={menuRef} style={{position:'fixed', left:kidMenu.x, top:kidMenu.y, transform:'translateX(-50%)'}} className="z-50 rounded border bg-white shadow">
-  <button
-    className="block w-full text-left px-3 py-2 text-red-600 hover:bg-red-50"
-    onClick={deleteKid}
-  >
-    Delete
-  </button>
-</div>)}
-
-{selected ? (
-  <>
-    <div className="grid grid-cols-2 gap-2">
-   <UploadBox
-  emptyLabel="Add PDF"
-  accept="application/pdf"
-  file={selected.resume}
-  onPick={(ref)=>{ updateKid(selected.id,{resume:ref}); setViewerFile(ref); }}
-  onShare={()=>selected.resume && shareRef(selected.resume,'resume')}
-  onDownload={()=>selected.resume && downloadRef(selected.resume)}
-  onClear={()=>{
-    if (selected.resume) deleteFileRef(selected.resume);
-    updateKid(selected.id,{resume:null});
-  }}
-  onOpen={(ref)=> setViewerFile(ref)}
-/>
-
-<UploadBox
-  emptyLabel="Add photo"
-  accept="image/*"
-  file={selected.photo}
-  onPick={(ref)=>{ updateKid(selected.id,{photo:ref}); setViewerFile(ref); }}
-  onShare={()=>selected.photo && shareRef(selected.photo,'photo')}
-  onDownload={()=>selected.photo && downloadRef(selected.photo)}
-  onClear={()=>{
-    if (selected.photo) deleteFileRef(selected.photo);
-    updateKid(selected.id,{photo:null});
-  }}
-  onOpen={(ref)=> setViewerFile(ref)}
-/>
-
-
-{viewerFile && (
-  <Viewer fileRef={viewerFile} onClose={() => setViewerFile(null)} />
-)}
-
-    </div>
-
-    <div className="mt-2">
-      <div className="text-xs">Blurb</div>
-      <div className="relative">
-        <textarea
-          className="border rounded p-2 w-full text-xs pr-20"
-          rows={2}
-          value={selected.blurb || ''}
-          onChange={e=>updateKid(selected.id,{blurb:e.target.value})}
-        />
-        <button
-          type="button"
-          aria-label="Share blurb"
-          className="absolute right-2 bottom-2 px-3 py-1 rounded-full border text-xs bg-white hover:bg-blue-50 border-blue-300 text-blue-700 disabled:opacity-50 shadow-sm"
-          onClick={()=>shareText(selected.blurb||'', selected.name||'Blurb')}
-          disabled={!((selected.blurb||'').trim())}
+      {kidMenu.open && (
+        <div
+          ref={menuRef}
+          style={{position:'fixed', left:kidMenu.x, top:kidMenu.y, transform:'translateX(-50%)'}}
+          className="z-50 rounded border bg-white shadow"
         >
-          Share
-        </button>
+          <button
+            className="block w-full text-left px-3 py-2 text-red-600 hover:bg-red-50"
+            onClick={deleteKid}
+          >
+            Delete
+          </button>
+        </div>
+      )}
+
+      {selected ? (
+        <>
+          <div className="grid grid-cols-2 gap-2">
+            <UploadBox
+              emptyLabel="Add PDF"
+              file={selected.resume}
+              onPick={(ref)=>{ updateKid(selected.id,{resume:ref}); setViewerFile(ref); }}
+              onShare={()=>selected.resume && shareRef(selected.resume,'resume')}
+              onDownload={()=>selected.resume && downloadRef(selected.resume)}
+              onClear={()=>{ if (selected.resume) deleteFileRef(selected.resume); updateKid(selected.id,{resume:null}); }}
+              onOpen={(ref)=> setViewerFile(ref)}
+            />
+
+            <UploadBox
+              emptyLabel="Add photo"
+              file={selected.photo}
+              onPick={(ref)=>{ updateKid(selected.id,{photo:ref}); setViewerFile(ref); }}
+              onShare={()=>selected.photo && shareRef(selected.photo,'photo')}
+              onDownload={()=>selected.photo && downloadRef(selected.photo)}
+              onClear={()=>{ if (selected.photo) deleteFileRef(selected.photo); updateKid(selected.id,{photo:null}); }}
+              onOpen={(ref)=> setViewerFile(ref)}
+            />
+
+            {viewerFile && (<Viewer fileRef={viewerFile} onClose={() => setViewerFile(null)} />)}
+          </div>
+
+          <div className="mt-2">
+            <div className="text-xs">Blurb</div>
+            <div className="relative">
+              <textarea
+                className="border rounded p-2 w-full text-xs pr-20"
+                rows={2}
+                value={selected.blurb || ''}
+                onChange={e=>updateKid(selected.id,{blurb:e.target.value})}
+              />
+              <button
+                type="button"
+                aria-label="Share blurb"
+                className="absolute right-2 bottom-2 px-3 py-1 rounded-full border text-xs bg-white hover:bg-blue-50 border-blue-300 text-blue-700 disabled:opacity-50 shadow-sm"
+                onClick={()=>shareText(selected.blurb||'', selected.name||'Blurb')}
+                disabled={!((selected.blurb||'').trim())}
+              >
+                Share
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-2">
+            <button
+              type="button"
+              className="px-3 py-1 rounded-full border text-xs bg-white hover:bg-blue-50 border-blue-300 text-blue-700 disabled:opacity-50"
+              disabled={!((selected?.blurb||'').trim() || selected?.photo || selected?.resume)}
+              onClick={()=>shareKidAll(selected)}
+            >
+              Share all
+            </button>
+          </div>
+        </>
+      ) : (
+        <div className="text-xs text-gray-500">
+          Add a child to attach a photo or resume.
+        </div>
+      )}
+
+      <div className="text-xs text-gray-500">
+        This app stores data only on this device. Use Export/Import to sync between devices.
       </div>
     </div>
-
-    <div className="mt-2">
-      <button
-        type="button"
-        className="px-3 py-1 rounded-full border text-xs bg-white hover:bg-blue-50 border-blue-300 text-blue-700 disabled:opacity-50"
-        disabled={!((selected?.blurb||'').trim() || selected?.photo || selected?.resume)}
-        onClick={()=>shareKidAll(selected)}
-      >
-        Share all
-      </button>
-    </div>
-  </>
-) : (
-  <div className="text-xs text-gray-500">
-    Add a child to attach a photo or resume.
-  </div>
-)}
-
-<div className="text-xs text-gray-500">
-  This app stores data only on this device. Use Export/Import to sync between devices.
-</div>
-</div>
-);
+  );
 }
+
 function Viewer({ fileRef, onClose }) {
   const url = useFilePreview(fileRef);
 
@@ -671,8 +689,8 @@ export default function App(){
   const [tab,setTab]=useState('prospects');
   const [profile,setProfile]=useState(null);
   const [prospects,setProspects]=useState([]);
-const applyingRemoteRef = useRef(false);
-const lastAppliedRef = useRef(0);
+  const applyingRemoteRef = useRef(false);
+  const lastAppliedRef = useRef(0);
   const [activeKidId, setActiveKidId] = useState('');
   const [syncOpen, setSyncOpen] = useState(false);
   const [sync, setSync] = useState({ config:'', room:'' });
@@ -722,49 +740,47 @@ const lastAppliedRef = useRef(0);
     return () => { cancelled = true; };
   }, [sync?.room]);
 
- useEffect(() => {
-  if (!sync?.room) return;
+  useEffect(() => {
+    if (!sync?.room) return;
 
-  const unsub = subscribeRoom(sync.room, (payload) => {
-    // Ignore our own updates by clientId
-    if (payload?.clientId === clientId) return;
+    const unsub = subscribeRoom(sync.room, (payload) => {
+      // Ignore our own updates by clientId
+      if (payload?.clientId === clientId) return;
 
-    // Prevent echo loop by marking remote apply
-    applyingRemoteRef.current = true;
-    lastAppliedRef.current = Date.now();
+      // Prevent echo loop by marking remote apply
+      applyingRemoteRef.current = true;
+      lastAppliedRef.current = Date.now();
 
-    if (payload?.profile) setProfile(payload.profile);
-    if (Array.isArray(payload?.prospects)) setProspects(payload.prospects);
+      if (payload?.profile) setProfile(payload.profile);
+      if (Array.isArray(payload?.prospects)) setProspects(payload.prospects);
 
-    applyingRemoteRef.current = false;
-  });
+      applyingRemoteRef.current = false;
+    });
 
-  return () => {
-    try { unsub?.(); } catch {}
-  };
-}, [sync?.room]);
+    return () => {
+      try { unsub?.(); } catch {}
+    };
+  }, [sync?.room]);
 
+  // Push changes (debounced)
+  useEffect(() => {
+    if (!sync?.room) return;
 
-// Push changes (debounced)
-useEffect(() => {
-  if (!sync?.room) return;
+    // Skip saves for ~800ms after we just applied a remote payload
+    if (lastAppliedRef.current && Date.now() - lastAppliedRef.current < 800) return;
 
-// Skip saves for ~800ms after we just applied a remote payload
-if (lastAppliedRef.current && Date.now() - lastAppliedRef.current < 800) return;
+    // If we just applied a remote payload, skip one save to prevent echo
+    if (applyingRemoteRef.current) {
+      applyingRemoteRef.current = false;
+      return;
+    }
 
-  // If we just applied a remote payload, skip one save to prevent echo
-  if (applyingRemoteRef.current) {
-    applyingRemoteRef.current = false;
-    return;
-  }
+    const t = setTimeout(() => {
+      saveRoom(sync.room, { profile, prospects, clientId }).catch(()=>{});
+    }, 400);
 
-  const t = setTimeout(() => {
-    saveRoom(sync.room, { profile, prospects, clientId }).catch(()=>{});
-  }, 400);
-
-  return () => clearTimeout(t);
-}, [profile, prospects, sync?.room]);
-
+    return () => clearTimeout(t);
+  }, [profile, prospects, sync?.room]);
 
   // Export / Import
   const importRef=useRef(null);
@@ -895,3 +911,4 @@ if (lastAppliedRef.current && Date.now() - lastAppliedRef.current < 800) return;
     </div>
   );
 }
+
