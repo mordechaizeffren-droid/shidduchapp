@@ -64,41 +64,26 @@ const IconPlus = (p) => (
   </svg>
 );
 
-// Outward arrows (collapsed state)
+// Outward arrows (collapsed)
 const IconExpandOut = (p) => (
   <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}>
-    {/* top-left */}
-    <path d="M3 9V3h6" />
-    <path d="M3 3l7 7" />
-    {/* top-right */}
-    <path d="M21 9V3h-6" />
-    <path d="M21 3l-7 7" />
-    {/* bottom-left */}
-    <path d="M3 15v6h6" />
-    <path d="M3 21l7-7" />
-    {/* bottom-right */}
-    <path d="M21 15v6h-6" />
-    <path d="M21 21l-7-7" />
+    <path d="M3 9V3h6"/><path d="M3 3l7 7"/>
+    <path d="M21 9V3h-6"/><path d="M21 3l-7 7"/>
+    <path d="M3 15v6h6"/><path d="M3 21l7-7"/>
+    <path d="M21 15v6h-6"/><path d="M21 21l-7-7"/>
   </svg>
 );
 
-// Inward arrows (expanded state)
+// Inward arrows (expanded)
 const IconExpandIn = (p) => (
   <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}>
-    {/* top-left pointing in */}
-    <path d="M10 10L3 3" />
-    <path d="M9 3H3v6" />
-    {/* top-right pointing in */}
-    <path d="M14 10l7-7" />
-    <path d="M15 3h6v6" />
-    {/* bottom-left pointing in */}
-    <path d="M10 14L3 21" />
-    <path d="M3 15v6h6" />
-    {/* bottom-right pointing in */}
-    <path d="M14 14l7 7" />
-    <path d="M21 15v6h-6" />
+    <path d="M10 10L3 3"/><path d="M9 3H3v6"/>
+    <path d="M14 10l7-7"/><path d="M15 3h6v6"/>
+    <path d="M10 14L3 21"/><path d="M3 15v6h6"/>
+    <path d="M14 14l7 7"/><path d="M21 15v6h-6"/>
   </svg>
 );
+
 
 // ===== File helpers =====
 const attachFile = async (file) => {
@@ -717,13 +702,13 @@ const [viewerProspectId, setViewerProspectId] = useState('');
           <div className="ml-auto flex items-center gap-2">
             {/* expand / collapse icon next to X */}
             <IconBtn
-              ariaLabel={expanded[p.id] ? "Collapse" : "Expand"}
-              label={expanded[p.id] ? "Collapse" : "Expand"}
-              onClick={()=>toggleOpen(p.id)}
-              className="w-10 h-10 border-gray-300 text-gray-700 hover:bg-gray-50"
-            >
-              {expanded[p.id] ? <IconExpandIn/> : <IconExpandOut/>}
-            </IconBtn>
+  ariaLabel={isOpen ? "Collapse" : "Expand"}
+  label={isOpen ? "Collapse" : "Expand"}
+  onClick={()=>toggleOpen(p.id)}
+  className="border-gray-300 text-gray-700 hover:bg-gray-50"
+>
+  {isOpen ? <IconExpandIn key="in" /> : <IconExpandOut key="out" />}
+</IconBtn>
 
             {/* header delete (uses custom confirm via removeP) */}
             <button
