@@ -58,6 +58,11 @@ const IconX = (p) => (
   </svg>
 );
 const IconGear = (p) => (<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" {...p}><circle cx="12" cy="12" r="3" fill="currentColor" /></svg>);
+const IconPlus = (p) => (
+  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}>
+    <path d="M12 5v14M5 12h14" />
+  </svg>
+);
 
 // Expand / Collapse icons (outward vs. inward)
 const IconExpandOut = (p) => (
@@ -375,19 +380,64 @@ function AddDropdown({ disabled=false }){
   const [open,setOpen] = useState(false);
   const [alignRight, setAlignRight] = useState(false);
   const wrapRef = useRef(null);
-  useEffect(()=>{ if(!open) return; const onDoc = (e)=>{ if(wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false); }; document.addEventListener('click', onDoc); return ()=> document.removeEventListener('click', onDoc); },[open]);
-  const toggle = ()=>{ if(disabled) return; const MENU_W=176; if(wrapRef.current){ const r=wrapRef.current.getBoundingClientRect(); setAlignRight(r.left + MENU_W > window.innerWidth);} setOpen(o=>!o); };
-  const triggerFiles = ()=>{ if(disabled) { alert("Add a profile first."); return; } window.dispatchEvent(new Event('open-quick-add')); setOpen(false); };
-  const triggerPaste = ()=>{ if(disabled) { alert("Add a profile first."); return; } window.dispatchEvent(new Event('open-paste-add')); setOpen(false); };
+
+  useEffect(()=>{ 
+    if(!open) return; 
+    const onDoc = (e)=>{ if(wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false); }; 
+    document.addEventListener('click', onDoc); 
+    return ()=> document.removeEventListener('click', onDoc); 
+  },[open]);
+
+  const toggle = ()=>{ 
+    if(disabled) return; 
+    const MENU_W=176; 
+    if(wrapRef.current){ 
+      const r=wrapRef.current.getBoundingClientRect(); 
+      setAlignRight(r.left + MENU_W > window.innerWidth);
+    } 
+    setOpen(o=>!o); 
+  };
+
+  const triggerFiles = ()=>{ 
+    if(disabled) { alert("Add a profile first."); return; } 
+    window.dispatchEvent(new Event('open-quick-add')); 
+    setOpen(false); 
+  };
+
+  const triggerPaste = ()=>{ 
+    if(disabled) { alert("Add a profile first."); return; } 
+    window.dispatchEvent(new Event('open-paste-add')); 
+    setOpen(false); 
+  };
+
   return (
     <div ref={wrapRef} className="relative inline-block">
-      <button type="button" aria-label="Add" title="Add" className={`px-2 py-1 rounded border flex items-center gap-1 ${disabled ? 'opacity-40' : ''}`} onClick={toggle}>
-        <IconDownload/>
+      <button
+        type="button"
+        aria-label="Add"
+        title="Add"
+        className={`px-2 py-1 rounded border flex items-center gap-1 ${disabled ? 'opacity-40' : ''}`}
+        onClick={toggle}
+      >
+        <IconPlus/>
       </button>
+
       {open && (
         <div className={`absolute z-50 mt-1 w-44 rounded border bg-white shadow ${alignRight ? 'right-0' : 'left-0'}`}>
-          <button type="button" className="w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center gap-2" onClick={triggerFiles}><IconDownload/><span>From files</span></button>
-          <button type="button" className="w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center gap-2" onClick={triggerPaste}><span className="text-lg leading-none">📋</span><span>Paste</span></button>
+          <button
+            type="button"
+            className="w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center gap-2"
+            onClick={triggerFiles}
+          >
+            <IconDownload/><span>From files</span>
+          </button>
+          <button
+            type="button"
+            className="w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center gap-2"
+            onClick={triggerPaste}
+          >
+            <span className="text-lg leading-none">📋</span><span>Paste</span>
+          </button>
         </div>
       )}
     </div>
@@ -593,222 +643,201 @@ function Prospects({ prospects, setProspects, profile, saveProfile, activeProfil
       )}
 
       {/* cards */}
-      <div className="grid grid-cols-1 gap-2 w-full">
-        {filtered.map(p=> {
-          const isOpen = !!expanded[p.id];
-          return (
-            <div
-              key={p.id}
-              className={`relative border rounded bg-white shadow-sm p-2 overflow-visible`}
-              onDragOver={(e)=>e.preventDefault()}
+<div className="grid grid-cols-1 gap-2 w-full">
+  {filtered.map(p=> {
+    const isOpen = !!expanded[p.id];
+    return (
+      <div
+        key={p.id}
+        className={`relative border rounded bg-white shadow-sm p-2 overflow-visible`}
+        onDragOver={(e)=>e.preventDefault()}
+      >
+        {/* header with inline pills */}
+        <div className="p-2 flex flex-wrap items-center gap-2">
+          <EditableText
+            value={p.fullName || ''}
+            placeholder="name..."
+            onChange={(v)=>updateP(p.id,{ fullName:v })}
+            className="font-medium truncate"
+            inputClass="font-medium truncate border rounded px-2 py-1 select-text"
+          />
+
+          {/* quick-glance pills on the same line (hidden when expanded) */}
+          {!expanded[p.id] && (
+            <div className="flex items-center gap-2 flex-wrap">
+              {p.status ? (
+                <span className={`px-2 py-0.5 rounded-full text-xs border ${statusTone(p.status)}`}>{p.status}</span>
+              ) : null}
+              {(p.sourceName||'').trim() ? (
+                <span className="px-2 py-0.5 rounded-full text-xs border bg-gray-100 border-gray-200">{p.sourceName}</span>
+              ) : null}
+              {(p.city||'').trim() ? (
+                <span className="px-2 py-0.5 rounded-full text-xs border bg-indigo-100 text-indigo-800 border-indigo-200">{p.city}</span>
+              ) : null}
+            </div>
+          )}
+
+          <div className="ml-auto flex items-center gap-2">
+            {/* expand / collapse icon next to X */}
+            <IconBtn
+              ariaLabel={expanded[p.id] ? "Collapse" : "Expand"}
+              label={expanded[p.id] ? "Collapse" : "Expand"}
+              onClick={()=>toggleOpen(p.id)}
+              className="w-10 h-10 border-gray-300 text-gray-700 hover:bg-gray-50"
             >
-              {/* header with inline pills */}
-             <div className="p-2 flex flex-wrap items-center gap-2">
-  {((p.updatedAt||0) > (unseenMap[p.id]||0)) && <span className="inline-block w-2 h-2 rounded-full bg-emerald-500" title="New/updated" />}
-  <EditableText
-    value={p.fullName || ''}
-    placeholder="name..."
-    onChange={(v)=>updateP(p.id,{ fullName:v })}
-    className="font-medium truncate"
-    inputClass="font-medium truncate border rounded px-2 py-1 select-text"
-  />
+              {expanded[p.id] ? <IconExpandIn/> : <IconExpandOut/>}
+            </IconBtn>
 
-  {/* quick-glance pills on the same line (hidden when expanded) */}
-  {!expanded[p.id] && (
-    <div className="flex items-center gap-2 flex-wrap">
-      {p.status ? (
-        <span className={`px-2 py-0.5 rounded-full text-xs border ${statusTone(p.status)}`}>{p.status}</span>
-      ) : null}
-      {(p.sourceName||'').trim() ? (
-        <span className="px-2 py-0.5 rounded-full text-xs border bg-gray-100 border-gray-200">{p.sourceName}</span>
-      ) : null}
-      {(p.city||'').trim() ? (
-        <span className="px-2 py-0.5 rounded-full text-xs border bg-indigo-100 text-indigo-800 border-indigo-200">{p.city}</span>
-      ) : null}
-    </div>
-  )}
+            {/* header delete (uses custom confirm via removeP) */}
+            <button
+              type="button"
+              aria-label="Delete"
+              className="w-7 h-7 rounded-full border border-rose-300 text-rose-700 flex items-center justify-center hover:bg-rose-50"
+              onClick={()=>removeP(p.id)}
+              title="Delete"
+            >
+              ×
+            </button>
+          </div>
+        </div>
 
-  <div className="ml-auto flex items-center gap-2">
-    {/* expand / collapse icon next to X */}
-   <IconBtn
-  ariaLabel={expanded[p.id] ? "Collapse" : "Expand"}
-  label={expanded[p.id] ? "Collapse" : "Expand"}
-  onClick={()=>toggleOpen(p.id)}
-  className="w-10 h-10 border-gray-300 text-gray-700 hover:bg-gray-50"
->
-      {expanded[p.id] ? <IconExpandIn/> : <IconExpandOut/>}
-    </IconBtn>
+        {/* details (animated) */}
+        <div
+          className={`transition-[max-height,opacity,transform] duration-200 ease-out overflow-hidden ${isOpen ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-0.5'}`}
+          style={{ maxHeight: isOpen ? 2000 : 0 }}
+          onTransitionEnd={()=>{ if (isOpen) markSeen(p.id, p.updatedAt || Date.now()); }}
+        >
+          <div className="p-2 pt-1">
+            <div className="mt-1 grid grid-cols-2 gap-2 items-start">
+              <div>
+                <div className="text-xs mb-1">Status</div>
+                <StatusPill value={p.status||'New'} onChange={(s)=>updateP(p.id,{status:s})} />
+              </div>
+              <div>
+                <div className="text-xs mb-1">City</div>
+                <InlinePill label={p.city||''} placeholder="..." onEdit={(v)=>updateP(p.id,{city:v})} full />
+              </div>
+            </div>
 
-    <button
-      type="button"
-      aria-label="Delete"
-      className="w-7 h-7 rounded-full border border-rose-300 text-rose-700 flex items-center justify-center hover:bg-rose-50"
-      onClick={()=>removeP(p.id)}
-      title="Delete"
-    >
-      ×
-    </button>
+            <div className="mt-2 grid grid-cols-2 gap-3 items-start">
+              <div>
+                <div className="text-xs mb-1">Suggested by</div>
+                <InlinePill label={p.sourceName||''} placeholder="name..." onEdit={(v)=>updateP(p.id,{sourceName:v})} full />
+              </div>
+              <div>
+                <div className="text-xs mb-1">known status</div>
+                <TrustSelect value={p.sourceTrust||''} onChange={(v)=>updateP(p.id,{sourceTrust:v})} />
+              </div>
+            </div>
 
-
-  </div>
-</div>
-
-              {/* details (animated) */}
+            {/* two columns: resume & photos (smaller tiles) */}
+            <div className="mt-2 grid grid-cols-2 gap-2 w-full">
+              {/* Resume */}
               <div
-                className={`transition-[max-height,opacity,transform] duration-200 ease-out overflow-hidden ${isOpen ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-0.5'}`}
-                style={{ maxHeight: isOpen ? 2000 : 0 }}
-                onTransitionEnd={()=>{ if (isOpen) markSeen(p.id, p.updatedAt || Date.now()); }}
+                onDrop={async(e)=>{ e.preventDefault(); await onDropFiles(p.id, e.dataTransfer?.files||null, 'resume'); }}
+                onDragOver={(e)=>e.preventDefault()}
               >
-                <div className="p-2 pt-1">
-                  <div className="mt-1 grid grid-cols-2 gap-2 items-start">
-                    <div>
-                      <div className="text-xs mb-1">Status</div>
-                      <StatusPill value={p.status||'New'} onChange={(s)=>updateP(p.id,{status:s})} />
-                    </div>
-                    <div>
-                      <div className="text-xs mb-1">City</div>
-                      <InlinePill label={p.city||''} placeholder="..." onEdit={(v)=>updateP(p.id,{city:v})} full />
-                    </div>
-                  </div>
-
-                  <div className="mt-2 grid grid-cols-2 gap-3 items-start">
-                    <div>
-                      <div className="text-xs mb-1">Suggested by</div>
-                      <InlinePill label={p.sourceName||''} placeholder="name..." onEdit={(v)=>updateP(p.id,{sourceName:v})} full />
-                    </div>
-                    <div>
-                      <div className="text-xs mb-1">known status</div>
-                      <TrustSelect value={p.sourceTrust||''} onChange={(v)=>updateP(p.id,{sourceTrust:v})} />
+                <div className="text-xs mb-1">Resume</div>
+                {p.resume ? (
+                  <div className="group cursor-pointer inline-block" onClick={()=>{ setViewerFile(p.resume); setViewerPhotos([]); setViewerIndex(0); }}>
+                    <div className="w-40"><MiniPreview fileRef={p.resume} /></div>
+                    <div className="flex items-center gap-2 mt-2">
+                      <IconBtn ariaLabel="Share" label="Share" onClick={(e)=>{ e.stopPropagation(); shareRef(p.resume,'resume'); }} className="border-blue-300 text-blue-700 hover:bg-blue-50"><IconShare/></IconBtn>
+                      <IconBtn ariaLabel="Download" label="Download" onClick={(e)=>{ e.stopPropagation(); downloadRef(p.resume); }} className="border-emerald-300 text-emerald-700 hover:bg-emerald-50"><IconDownload/></IconBtn>
+                      <IconBtn ariaLabel="Delete" label="Delete" onClick={async(e)=>{ e.stopPropagation(); const ok=await askConfirm(); if(!ok) return; if (p.resume) await deleteFileRef(p.resume); updateP(p.id,{resume:null}); }} className="border-rose-300 text-rose-700 hover:bg-rose-50"><IconX/></IconBtn>
                     </div>
                   </div>
-
-                  {/* two columns: resume & photos (smaller tiles) */}
-                  <div className="mt-2 grid grid-cols-2 gap-2 w-full">
-                    {/* Resume */}
-                    <div
-                      onDrop={async(e)=>{ e.preventDefault(); await onDropFiles(p.id, e.dataTransfer?.files||null, 'resume'); }}
-                      onDragOver={(e)=>e.preventDefault()}
-                    >
-                      <div className="text-xs mb-1">Resume</div>
-                      {p.resume ? (
-                        <div className="group cursor-pointer inline-block" onClick={()=>{ setViewerFile(p.resume); setViewerPhotos([]); setViewerIndex(0); }}>
-                          <div className="w-40"><MiniPreview fileRef={p.resume} /></div>
-                          <div className="flex items-center gap-2 mt-2">
-                            <IconBtn ariaLabel="Share" label="Share" onClick={(e)=>{ e.stopPropagation(); shareRef(p.resume,'resume'); }} className="border-blue-300 text-blue-700 hover:bg-blue-50"><IconShare/></IconBtn>
-                            <IconBtn ariaLabel="Download" label="Download" onClick={(e)=>{ e.stopPropagation(); downloadRef(p.resume); }} className="border-emerald-300 text-emerald-700 hover:bg-emerald-50"><IconDownload/></IconBtn>
-                            <IconBtn ariaLabel="Delete" label="Delete" onClick={async(e)=>{ e.stopPropagation(); const ok=await askConfirm(); if(!ok) return; if (p.resume) await deleteFileRef(p.resume); updateP(p.id,{resume:null}); }} className="border-rose-300 text-rose-700 hover:bg-rose-50"><IconX/></IconBtn>
-                          </div>
-                        </div>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={()=>document.getElementById(`file-resume-${p.id}`)?.click()}
-                          className="h-28 w-40 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 shadow-sm flex flex-col items-center justify-center"
-                        >
-                          <div className="text-3xl leading-none text-gray-400">+</div>
-                          <div className="text-xs text-gray-500 mt-1">Add resume</div>
-                          <input id={`file-resume-${p.id}`} type="file" accept="*/*" className="hidden" onChange={async(e)=>{ const f=e.target.files?.[0]; if(f){ const ref=await attachFile(f); updateP(p.id,{resume:ref}); } e.target.value=""; }} />
-                        </button>
-                      )}
-                    </div>
-
-                    {/* Photos — single box + tiny sliver + small "+" overlay */}
-                    <div
-                      onDrop={async(e)=>{ e.preventDefault(); const files = Array.from(e.dataTransfer?.files||[]).filter(f=> (f.type||'').startsWith('image/')); if(files.length){ for(const f of files){ const ref=await attachFile(f); updateP(p.id,{photos:[...(p.photos||[]), ref]}); }} }}
-                      onDragOver={(e)=>e.preventDefault()}
-                    >
-                      <div className="text-xs mb-1">Photos</div>
-
-                      <div className="relative inline-block">
-                        {/* sliver of second photo (peek) */}
-                        {p.photos?.[1] && (
-                          <div className="absolute left-2 top-2 w-40 h-28 rounded-md bg-white border overflow-hidden opacity-70 pointer-events-none -z-0">
-                            <MiniPreview fileRef={p.photos[1]} />
-                          </div>
-                        )}
-
-                        {/* main photo box OR add box if empty */}
-                        {p.photos?.[0] ? (
-  <div className="relative z-10">
-    <div className="w-40 h-28 rounded-md bg-white border overflow-hidden cursor-pointer"
-      onClick={()=>{ setViewerPhotos(p.photos||[]); setViewerIndex(0); setViewerFile(p.photos?.[0]); }}>
-      <MiniPreview fileRef={p.photos[0]} />
-    </div>
-
-    {/* delete overlay for first photo */}
-    <button
-      type="button"
-      aria-label="Delete photo"
-      className="absolute top-1 right-1 z-20 w-7 h-7 rounded-full border border-rose-300 text-rose-700 bg-white shadow flex items-center justify-center hover:bg-rose-50"
-      onClick={async(e)=>{ 
-        e.stopPropagation(); 
-        const ok = await askConfirm(); 
-        if(!ok) return; 
-        const first = p.photos?.[0]; 
-        if(first) await deleteFileRef(first); 
-        updateP(p.id,{photos:(p.photos||[]).slice(1)});
-      }}
-      title="Delete photo"
-    >×</button>
-
-    {/* small + overlay */}
-    <button
-      type="button"
-      onClick={()=>document.getElementById(`file-photos-${p.id}`)?.click()}
-      className="absolute -bottom-3 -right-3 z-20 w-8 h-8 rounded-full border bg-white shadow flex items-center justify-center"
-      title="Add photo"
-    >+</button>
-  </div>
-) : (
-
-                          <button
-                            type="button"
-                            onClick={()=>document.getElementById(`file-photos-${p.id}`)?.click()}
-                            className="h-28 w-40 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 shadow-sm flex flex-col items-center justify-center"
-                            title="Add photos"
-                          >
-                            <div className="text-3xl leading-none text-gray-400">+</div>
-                            <div className="text-[11px] text-gray-500 mt-1">Add photos</div>
-                          </button>
-                        )}
-                        <input id={`file-photos-${p.id}`} type="file" accept="image/*" multiple className="hidden" onChange={async(e)=>{ const fs=Array.from(e.target.files||[]); if(fs.length){ const refs=[]; for(const f of fs){ refs.push(await attachFile(f)); } updateP(p.id,{photos:[...(p.photos||[]), ...refs]}); } e.target.value=""; }} />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Notes */}
-                  <div className="mt-2">
-                    <div className="text-xs">Notes</div>
-                    <div className="relative">
-                      <textarea className="border rounded p-2 w-full text-xs pr-12 select-text placeholder-gray-400" placeholder="..." rows={2} value={p.notes||''} onChange={e=>updateP(p.id,{notes:e.target.value})} />
-                      <IconBtn ariaLabel="Share" label="Share" onClick={()=>shareText(p.notes||'')} className="absolute right-2 bottom-2 border-blue-300 text-blue-700 hover:bg-blue-50"><IconShare/></IconBtn>
-                    </div>
-                  </div>
-
-                  {/* Share all (bottom) — show only when ≥ 2 items exist */}
-                  {hasTwoShareItems(p) ? (
-                    <div className="mt-3">
-                      <button type="button" className="px-3 py-1 rounded-full border text-xs bg-white hover:bg-blue-50 border-blue-300 text-blue-700"
-                        onClick={()=>shareAll({ resume:p.resume, photos:p.photos||[], text:p.notes||'' })}
-                      >
-                        Share all
-                      </button>
-                    </div>
-                  ) : null}
-                </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={()=>document.getElementById(`file-resume-${p.id}`)?.click()}
+                    className="h-28 w-40 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 flex flex-col items-center justify-center"
+                  >
+                    <div className="text-3xl leading-none text-gray-400">+</div>
+                    <div className="text-xs text-gray-500 mt-1">Add resume</div>
+                    <input id={`file-resume-${p.id}`} type="file" accept="*/*" className="hidden" onChange={async(e)=>{ const f=e.target.files?.[0]; if(f){ const ref=await attachFile(f); updateP(p.id,{resume:ref}); } e.target.value=""; }} />
+                  </button>
+                )}
               </div>
 
-             
-            </div>
-          );
-        })}
+              {/* Photos — single box + tiny sliver + small "+" overlay */}
+              <div
+                onDrop={async(e)=>{ e.preventDefault(); const files = Array.from(e.dataTransfer?.files||[]).filter(f=> (f.type||'').startsWith('image/')); if(files.length){ for(const f of files){ const ref=await attachFile(f); updateP(p.id,{photos:[...(p.photos||[]), ref]}); }} }}
+                onDragOver={(e)=>e.preventDefault()}
+              >
+                <div className="text-xs mb-1">Photos</div>
 
-        {/* Add prospect tile — smaller */}
-        <button type="button" onClick={addProspect} className="h-28 w-40 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 shadow-sm flex flex-col items-center justify-center">
-          <div className="text-4xl leading-none text-gray-400">+</div>
-          <div className="text-xs text-gray-500 mt-1">Add resume</div>
-        </button>
+                <div className="relative inline-block">
+                  {/* sliver of second photo (peek) */}
+                  {p.photos?.[1] && (
+                    <div className="absolute left-2 top-2 w-40 h-28 rounded-md bg-white border overflow-hidden opacity-70 pointer-events-none -z-0">
+                      <MiniPreview fileRef={p.photos[1]} />
+                    </div>
+                  )}
+
+                  {/* main photo box OR add box if empty */}
+                  {p.photos?.[0] ? (
+                    <div className="relative z-10">
+                      <div className="w-40 h-28 rounded-md bg-white border overflow-hidden cursor-pointer"
+                        onClick={()=>{ setViewerPhotos(p.photos||[]); setViewerIndex(0); setViewerFile(p.photos?.[0]); }}>
+                        <MiniPreview fileRef={p.photos[0]} />
+                      </div>
+                      {/* small + overlay */}
+                      <button
+                        type="button"
+                        onClick={()=>document.getElementById(`file-photos-${p.id}`)?.click()}
+                        className="absolute -bottom-3 -right-3 z-20 w-8 h-8 rounded-full border bg-white shadow flex items-center justify-center"
+                        title="Add photo"
+                      >+</button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={()=>document.getElementById(`file-photos-${p.id}`)?.click()}
+                      className="h-28 w-40 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 flex flex-col items-center justify-center"
+                      title="Add photos"
+                    >
+                      <div className="text-3xl leading-none text-gray-400">+</div>
+                      <div className="text-[11px] text-gray-500 mt-1">Add photos</div>
+                    </button>
+                  )}
+                  <input id={`file-photos-${p.id}`} type="file" accept="image/*" multiple className="hidden" onChange={async(e)=>{ const fs=Array.from(e.target.files||[]); if(fs.length){ const refs=[]; for(const f of fs){ refs.push(await attachFile(f)); } updateP(p.id,{photos:[...(p.photos||[]), ...refs]}); } e.target.value=""; }} />
+                </div>
+              </div>
+            </div>
+
+            {/* Notes */}
+            <div className="mt-2">
+              <div className="text-xs">Notes</div>
+              <div className="relative">
+                <textarea className="border rounded p-2 w-full text-xs pr-12 select-text placeholder-gray-400" placeholder="..." rows={2} value={p.notes||''} onChange={e=>updateP(p.id,{notes:e.target.value})} />
+                <IconBtn ariaLabel="Share" label="Share" onClick={()=>shareText(p.notes||'')} className="absolute right-2 bottom-2 border-blue-300 text-blue-700 hover:bg-blue-50"><IconShare/></IconBtn>
+              </div>
+            </div>
+
+            {/* Share all (bottom) — show only when ≥ 2 items exist */}
+            {hasTwoShareItems(p) ? (
+              <div className="mt-3">
+                <button type="button" className="px-3 py-1 rounded-full border text-xs bg-white hover:bg-blue-50 border-blue-300 text-blue-700"
+                  onClick={()=>shareAll({ resume:p.resume, photos:p.photos||[], text:p.notes||'' })}
+                >
+                  Share all
+                </button>
+              </div>
+            ) : null}
+          </div>
+        </div>
       </div>
+    );
+  })}
+
+  {/* Add prospect tile — smaller */}
+  <button type="button" onClick={addProspect} className="h-28 w-40 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 flex flex-col items-center justify-center">
+    <div className="text-4xl leading-none text-gray-400">+</div>
+    <div className="text-xs text-gray-500 mt-1">Add resume</div>
+  </button>
+</div>
+
 
       {/* Viewer & Confirm */}
       {viewerFile && (<Viewer fileRef={viewerFile} photos={viewerPhotos} startIndex={viewerIndex} onClose={()=> { setViewerFile(null); setViewerPhotos([]); setViewerIndex(0); }} />)}
