@@ -249,19 +249,17 @@ function MiniPreview({ fileRef }) {
 }
 
 
-function Viewer({ fileRef, startIndex=0, photos=[], onClose }) {
+function Viewer({ fileRef, startIndex=0, photos=[], onClose, onDeletePhoto }) {
   const url = useFilePreview(fileRef);
   const isImg = (fileRef?.type || "").startsWith("image/");
   const [drag, setDrag] = useState({ active:false, startY:0, dy:0 });
 
-  // ESC to close
   useEffect(() => {
     const h = (e) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
   }, [onClose]);
 
-  // swipe down to dismiss (images)
   const onTouchStart = (e) => { setDrag({ active:true, startY:e.touches[0].clientY, dy:0 }); };
   const onTouchMove = (e) => { if(!drag.active) return; const dy = e.touches[0].clientY - drag.startY; setDrag((d)=>({ ...d, dy })); };
   const onTouchEnd = () => {
@@ -270,23 +268,21 @@ function Viewer({ fileRef, startIndex=0, photos=[], onClose }) {
     setDrag({ active:false, startY:0, dy:0 });
   };
 
-  // gallery navigation for photos (swipe left/right in viewer)
   const [idx, setIdx] = useState(startIndex);
   useEffect(()=>setIdx(startIndex),[startIndex, fileRef?.id]);
 
-  const canLeft = isImg && photos.length > 1;
-  const goLeft = () => { if (!canLeft) return; setIdx((i)=> (i-1+photos.length)%photos.length); };
-  const goRight = () => { if (!canLeft) return; setIdx((i)=> (i+1)%photos.length); };
-
-  useEffect(()=>{ if(!isImg || photos.length<2) return;
-    const onKey=(e)=>{ if(e.key==='ArrowLeft') goLeft(); if(e.key==='ArrowRight') goRight(); };
-    window.addEventListener('keydown', onKey); return ()=>window.removeEventListener('keydown', onKey);
-  },[isImg, photos.length]);
-
-  const currentRef = isImg && photos.length ? photos[idx] : fileRef;
+  const canGallery = isImg && photos.length > 0;
+  const currentRef = canGallery ? photos[idx] : fileRef;
   const currentUrl = useFilePreview(currentRef);
   const currentIsImg = (currentRef?.type || "").startsWith("image/");
   const currentIsPdf = (currentRef?.type || "").toLowerCase() === "application/pdf" || (currentRef?.name || "").toLowerCase().endsWith(".pdf");
+
+  const goLeft  = () => { if (!canGallery || photos.length<2) return; setIdx((i)=> (i-1+photos.length)%photos.length); };
+  const goRight = () => { if (!canGallery || photos.length<2) return; setIdx((i)=> (i+1)%photos.length); };
+  useEffect(()=>{ if(!canGallery || photos.length<2) return;
+    const onKey=(e)=>{ if(e.key==='ArrowLeft') goLeft(); if(e.key==='ArrowRight') goRight(); };
+    window.addEventListener('keydown', onKey); return ()=>window.removeEventListener('keydown', onKey);
+  },[canGallery, photos.length]);
 
   return (
     <div
@@ -296,17 +292,30 @@ function Viewer({ fileRef, startIndex=0, photos=[], onClose }) {
       aria-label="Viewer"
     >
       <div
-        className="max-w-[1000px] w-full max-h-[95vh] bg-white rounded-lg overflow-hidden"
+        className="max-w-[1000px] w-full max-h-[95vh] bg-white rounded-lg overflow-hidden relative"
         onClick={(e) => e.stopPropagation()}
         onTouchStart={onTouchStart}
         onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}
         style={{ transform: drag.active ? `translateY(${Math.max(0, drag.dy)}px)` : undefined, transition: drag.active ? 'none' : 'transform 160ms ease-out' }}
       >
-        {/* Grab handle for PDFs (iframe eats touches) */}
+        {/* top grab strip */}
         <div className="h-5 flex items-center justify-center bg-gray-50">
           <div className="w-12 h-1.5 rounded-full bg-gray-300" />
         </div>
+
+        {/* DELETE (photos only) */}
+        {currentIsImg && typeof onDeletePhoto === 'function' && (
+          <button
+            type="button"
+            className="absolute top-3 right-3 z-20 px-2 py-1 rounded border border-rose-300 text-rose-700 bg-white/95 hover:bg-white"
+            onClick={(e)=>{ e.stopPropagation(); onDeletePhoto(idx, currentRef); }}
+            aria-label="Delete photo"
+            title="Delete photo"
+          >
+            Delete
+          </button>
+        )}
 
         <div className="relative">
           {currentUrl ? (
@@ -321,21 +330,10 @@ function Viewer({ fileRef, startIndex=0, photos=[], onClose }) {
             <div className="p-6 text-center text-sm text-gray-500">Loading…</div>
           )}
 
-          {/* Open in new tab fallback */}
-          {currentUrl && (
-            <a
-              href={currentUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="absolute top-3 right-3 text-xs px-2 py-1 rounded border bg-white/90 hover:bg-white"
-              onClick={(e)=>e.stopPropagation()}
-            >
-              Open in new tab
-            </a>
-          )}
+          {/* NOTE: removed "Open in new tab" link per request */}
 
           {/* Left/right controls for multi-photos */}
-          {isImg && photos.length > 1 && (
+          {canGallery && photos.length > 1 && (
             <>
               <button className="absolute left-2 top-1/2 -translate-y-1/2 bg-white/80 hover:bg-white rounded-full w-8 h-8 flex items-center justify-center"
                 onClick={goLeft} aria-label="Previous photo">‹</button>
@@ -506,9 +504,10 @@ function Prospects({ prospects, setProspects, profile, saveProfile, activeProfil
   const [expanded,setExpanded]=useState({});
   const [pasteOn,setPasteOn]=useState(false);
   const pasteRef = useRef(null);
-  const [viewerFile, setViewerFile] = useState(null);
-  const [viewerPhotos, setViewerPhotos] = useState([]);
-  const [viewerIndex, setViewerIndex] = useState(0);
+const [viewerFile, setViewerFile] = useState(null);
+const [viewerPhotos, setViewerPhotos] = useState([]);
+const [viewerIndex, setViewerIndex] = useState(0);
+const [viewerProspectId, setViewerProspectId] = useState('');
   const { ask: askConfirm, Confirm } = useConfirm();
 
   // first-use tip (once)
@@ -777,20 +776,26 @@ function Prospects({ prospects, setProspects, profile, saveProfile, activeProfil
 
                   {/* main photo box OR add box if empty */}
                   {p.photos?.[0] ? (
-                    <div className="relative z-10">
-                      <div className="w-40 h-28 rounded-md bg-white border overflow-hidden cursor-pointer"
-                        onClick={()=>{ setViewerPhotos(p.photos||[]); setViewerIndex(0); setViewerFile(p.photos?.[0]); }}>
-                        <MiniPreview fileRef={p.photos[0]} />
-                      </div>
-                      {/* small + overlay */}
-                      <button
-                        type="button"
-                        onClick={()=>document.getElementById(`file-photos-${p.id}`)?.click()}
-                        className="absolute -bottom-3 -right-3 z-20 w-8 h-8 rounded-full border bg-white shadow flex items-center justify-center"
-                        title="Add photo"
-                      >+</button>
-                    </div>
-                  ) : (
+  <div className="relative z-10">
+    <div
+      className="w-40 h-28 rounded-md bg-white border overflow-hidden cursor-pointer"
+      onClick={()=>{ setViewerProspectId(p.id); setViewerPhotos(p.photos||[]); setViewerIndex(0); setViewerFile(p.photos?.[0]); }}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e)=>{ if(e.key==='Enter' || e.key===' '){ e.preventDefault(); setViewerProspectId(p.id); setViewerPhotos(p.photos||[]); setViewerIndex(0); setViewerFile(p.photos?.[0]); } }}
+    >
+      <MiniPreview fileRef={p.photos[0]} />
+    </div>
+
+    {/* small + overlay */}
+    <button
+      type="button"
+      onClick={()=>document.getElementById(`file-photos-${p.id}`)?.click()}
+      className="absolute -bottom-3 -right-3 z-20 w-8 h-8 rounded-full border bg-white shadow flex items-center justify-center"
+      title="Add photo"
+    >+</button>
+  </div>
+) : (
                     <button
                       type="button"
                       onClick={()=>document.getElementById(`file-photos-${p.id}`)?.click()}
@@ -840,7 +845,28 @@ function Prospects({ prospects, setProspects, profile, saveProfile, activeProfil
 
 
       {/* Viewer & Confirm */}
-      {viewerFile && (<Viewer fileRef={viewerFile} photos={viewerPhotos} startIndex={viewerIndex} onClose={()=> { setViewerFile(null); setViewerPhotos([]); setViewerIndex(0); }} />)}
+      {viewerFile && (
+  <Viewer
+    fileRef={viewerFile}
+    photos={viewerPhotos}
+    startIndex={viewerIndex}
+    onClose={()=> { setViewerFile(null); setViewerPhotos([]); setViewerIndex(0); setViewerProspectId(''); }}
+    onDeletePhoto={async (i, ref) => {
+      const ok = await askConfirm(); if (!ok) return;
+      try { if (ref) await deleteFileRef(ref); } catch {}
+      const cur = ensureArray((safe.find(x=>x.id===viewerProspectId) || {}).photos);
+      const next = cur.filter((_, idx)=> idx !== i);
+      updateP(viewerProspectId, { photos: next });
+      setViewerPhotos(next);
+      if (next.length === 0) { setViewerFile(null); setViewerProspectId(''); }
+      else {
+        const newIndex = Math.min(i, next.length-1);
+        setViewerIndex(newIndex);
+        setViewerFile(next[newIndex]);
+      }
+    }}
+  />
+)}
       {Confirm}
     </div>
   );
@@ -986,26 +1012,15 @@ function MyProfile({ profile, saveProfile }){
 
                 {selected.photos?.[0] ? (
   <div className="relative z-10">
-    <div className="w-40 h-28 rounded-md bg-white border overflow-hidden cursor-pointer"
-      onClick={()=>{ setViewerPhotos(selected.photos||[]); setViewerIndex(0); setViewerFile(selected.photos?.[0]); }}>
+    <div
+      className="w-40 h-28 rounded-md bg-white border overflow-hidden cursor-pointer"
+      onClick={()=>{ setViewerPhotos(selected.photos||[]); setViewerIndex(0); setViewerFile(selected.photos?.[0]); }}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e)=>{ if(e.key==='Enter' || e.key===' '){ e.preventDefault(); setViewerPhotos(selected.photos||[]); setViewerIndex(0); setViewerFile(selected.photos?.[0]); } }}
+    >
       <MiniPreview fileRef={selected.photos[0]} />
     </div>
-
-    {/* delete overlay for first photo */}
-    <button
-      type="button"
-      aria-label="Delete photo"
-      className="absolute top-1 right-1 z-20 w-7 h-7 rounded-full border border-rose-300 text-rose-700 bg-white shadow flex items-center justify-center hover:bg-rose-50"
-      onClick={async(e)=>{ 
-        e.stopPropagation(); 
-        const ok = await askConfirm(); 
-        if(!ok) return; 
-        const first = selected.photos?.[0]; 
-        if(first) await deleteFileRef(first); 
-        updateProfile(selected.id,{photos:(selected.photos||[]).slice(1)});
-      }}
-      title="Delete photo"
-    >×</button>
 
     <button
       type="button"
@@ -1030,7 +1045,28 @@ function MyProfile({ profile, saveProfile }){
             </div>
 
             {/* Viewer + Confirm */}
-            {viewerFile && (<Viewer fileRef={viewerFile} photos={viewerPhotos} startIndex={viewerIndex} onClose={()=> { setViewerFile(null); setViewerPhotos([]); setViewerIndex(0); }} />)}
+            {viewerFile && (
+  <Viewer
+    fileRef={viewerFile}
+    photos={viewerPhotos}
+    startIndex={viewerIndex}
+    onClose={()=> { setViewerFile(null); setViewerPhotos([]); setViewerIndex(0); }}
+    onDeletePhoto={async (i, ref) => {
+      const ok = await askConfirm(); if (!ok) return;
+      try { if (ref) await deleteFileRef(ref); } catch {}
+      const cur = ensureArray(selected?.photos);
+      const next = cur.filter((_, idx)=> idx !== i);
+      updateProfile(selected.id, { photos: next });
+      setViewerPhotos(next);
+      if (next.length === 0) { setViewerFile(null); }
+      else {
+        const newIndex = Math.min(i, next.length-1);
+        setViewerIndex(newIndex);
+        setViewerFile(next[newIndex]);
+      }
+    }}
+  />
+)}
             {Confirm}
           </div>
 
