@@ -59,6 +59,25 @@ const IconX = (p) => (
 );
 const IconGear = (p) => (<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" {...p}><circle cx="12" cy="12" r="3" fill="currentColor" /></svg>);
 
+// Expand / Collapse icons (outward vs. inward)
+const IconExpandOut = (p) => (
+  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}>
+    <path d="M3 9V3h6"/><path d="M3 3l7 7"/>
+    <path d="M21 9V3h-6"/><path d="M21 3l-7 7"/>
+    <path d="M3 15v6h6"/><path d="M3 21l7-7"/>
+    <path d="M21 15v6h-6"/><path d="M21 21l-7-7"/>
+  </svg>
+);
+
+const IconExpandIn = (p) => (
+  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}>
+    <path d="M10 10L3 3"/><path d="M9 3H3v6"/>
+    <path d="M14 10l7-7"/><path d="M15 3h6v6"/>
+    <path d="M10 14L3 21"/><path d="M3 15v6h6"/>
+    <path d="M14 14l7 7"/><path d="M21 15v6h-6"/>
+  </svg>
+);
+
 // ===== File helpers =====
 const attachFile = async (file) => {
   const id = uid();
@@ -584,35 +603,54 @@ function Prospects({ prospects, setProspects, profile, saveProfile, activeProfil
               onDragOver={(e)=>e.preventDefault()}
             >
               {/* header with inline pills */}
-              <div className="p-2 flex flex-wrap items-center gap-2">
-                {(p.updatedAt || 0) > (unseenMap[p.id] || 0) ? <span className="inline-block w-2 h-2 rounded-full bg-emerald-500" title="New/updated" /> : <span className="w-2 h-2" />}
-                <EditableText
-                  value={p.fullName || ''}
-                  placeholder="name..."
-                  onChange={(v)=>updateP(p.id,{fullName:v})}
-                  className="font-medium truncate"
-                  inputClass="font-medium truncate border rounded px-2 py-1 select-text"
-                />
-                {/* quick glance pills (hidden when expanded) */}
-                {!isOpen && (
-                  <div className="flex items-center gap-2 flex-wrap ml-2">
-                    {p.status ? <DisplayPill tone={statusTone(p.status)}>{p.status}</DisplayPill> : null}
-                    {(p.sourceName||'').trim() ? <DisplayPill>{p.sourceName}</DisplayPill> : null}
-                    {(p.city||'').trim() ? <DisplayPill>{p.city}</DisplayPill> : null}
-                  </div>
-                )}
-                <div className="ml-auto flex items-center gap-2">
-                  <button
-                    type="button"
-                    aria-label="Delete"
-                    title="Delete"
-                    className="w-7 h-7 rounded-full border border-rose-300 text-rose-700 flex items-center justify-center hover:bg-rose-50"
-                    onClick={()=>removeP(p.id)}
-                  >
-                    ×
-                  </button>
-                </div>
-              </div>
+             <div className="p-2 flex flex-wrap items-center gap-2">
+  <EditableText
+    value={p.fullName || ''}
+    placeholder="name..."
+    onChange={(v)=>updateP(p.id,{ fullName:v })}
+    className="font-medium truncate"
+    inputClass="font-medium truncate border rounded px-2 py-1 select-text"
+  />
+
+  {/* quick-glance pills on the same line (hidden when expanded) */}
+  {!expanded[p.id] && (
+    <div className="flex items-center gap-2 flex-wrap">
+      {p.status ? (
+        <span className={`px-2 py-0.5 rounded-full text-xs border ${statusTone(p.status)}`}>{p.status}</span>
+      ) : null}
+      {(p.sourceName||'').trim() ? (
+        <span className="px-2 py-0.5 rounded-full text-xs border bg-gray-100 border-gray-200">{p.sourceName}</span>
+      ) : null}
+      {(p.city||'').trim() ? (
+        <span className="px-2 py-0.5 rounded-full text-xs border bg-indigo-100 text-indigo-800 border-indigo-200">{p.city}</span>
+      ) : null}
+    </div>
+  )}
+
+  <div className="ml-auto flex items-center gap-2">
+    {/* expand / collapse icon next to X */}
+    <IconBtn
+      ariaLabel={expanded[p.id] ? "Collapse" : "Expand"}
+      label={expanded[p.id] ? "Collapse" : "Expand"}
+      onClick={()=>toggleOpen(p.id)}
+      className="border-gray-300 text-gray-700 hover:bg-gray-50"
+    >
+      {expanded[p.id] ? <IconExpandIn/> : <IconExpandOut/>}
+    </IconBtn>
+
+    <button
+      type="button"
+      aria-label="Delete"
+      className="w-7 h-7 rounded-full border border-rose-300 text-rose-700 flex items-center justify-center hover:bg-rose-50"
+      onClick={()=>removeP(p.id)}
+      title="Delete"
+    >
+      ×
+    </button>
+
+
+  </div>
+</div>
 
               {/* details (animated) */}
               <div
@@ -632,7 +670,7 @@ function Prospects({ prospects, setProspects, profile, saveProfile, activeProfil
                     </div>
                   </div>
 
-                  <div className="mt-2 border rounded p-3 grid grid-cols-2 gap-3 items-start">
+                  <div className="mt-2 grid grid-cols-2 gap-3 items-start">
                     <div>
                       <div className="text-xs mb-1">Suggested by</div>
                       <InlinePill label={p.sourceName||''} placeholder="name..." onEdit={(v)=>updateP(p.id,{sourceName:v})} full />
@@ -690,20 +728,38 @@ function Prospects({ prospects, setProspects, profile, saveProfile, activeProfil
 
                         {/* main photo box OR add box if empty */}
                         {p.photos?.[0] ? (
-                          <div className="relative z-10">
-                            <div className="w-40 h-28 rounded-md bg-white border overflow-hidden cursor-pointer"
-                              onClick={()=>{ setViewerPhotos(p.photos||[]); setViewerIndex(0); setViewerFile(p.photos?.[0]); }}>
-                              <MiniPreview fileRef={p.photos[0]} />
-                            </div>
-                            {/* small + overlay */}
-                            <button
-                              type="button"
-                              onClick={()=>document.getElementById(`file-photos-${p.id}`)?.click()}
-                              className="absolute -bottom-3 -right-3 z-20 w-8 h-8 rounded-full border bg-white shadow flex items-center justify-center"
-                              title="Add photo"
-                            >+</button>
-                          </div>
-                        ) : (
+  <div className="relative z-10">
+    <div className="w-40 h-28 rounded-md bg-white border overflow-hidden cursor-pointer"
+      onClick={()=>{ setViewerPhotos(p.photos||[]); setViewerIndex(0); setViewerFile(p.photos?.[0]); }}>
+      <MiniPreview fileRef={p.photos[0]} />
+    </div>
+
+    {/* delete overlay for first photo */}
+    <button
+      type="button"
+      aria-label="Delete photo"
+      className="absolute top-1 right-1 z-20 w-7 h-7 rounded-full border border-rose-300 text-rose-700 bg-white shadow flex items-center justify-center hover:bg-rose-50"
+      onClick={async(e)=>{ 
+        e.stopPropagation(); 
+        const ok = await askConfirm(); 
+        if(!ok) return; 
+        const first = p.photos?.[0]; 
+        if(first) await deleteFileRef(first); 
+        updateP(p.id,{photos:(p.photos||[]).slice(1)});
+      }}
+      title="Delete photo"
+    >×</button>
+
+    {/* small + overlay */}
+    <button
+      type="button"
+      onClick={()=>document.getElementById(`file-photos-${p.id}`)?.click()}
+      className="absolute -bottom-3 -right-3 z-20 w-8 h-8 rounded-full border bg-white shadow flex items-center justify-center"
+      title="Add photo"
+    >+</button>
+  </div>
+) : (
+
                           <button
                             type="button"
                             onClick={()=>document.getElementById(`file-photos-${p.id}`)?.click()}
@@ -741,16 +797,7 @@ function Prospects({ prospects, setProspects, profile, saveProfile, activeProfil
                 </div>
               </div>
 
-              {/* circular hanging tab (visible in both states) */}
-              <button
-                type="button"
-                aria-label={isOpen ? "Collapse details" : "Expand details"}
-                title={isOpen ? "Collapse" : "Expand"}
-                onClick={()=>toggleOpen(p.id)}
-                className="absolute right-4 -bottom-5 w-10 h-10 bg-white border rounded-full shadow flex items-center justify-center"
-              >
-                <span className="text-base leading-none">{isOpen ? '^' : 'v'}</span>
-              </button>
+             
             </div>
           );
         })}
@@ -908,19 +955,37 @@ function MyProfile({ profile, saveProfile }){
                 )}
 
                 {selected.photos?.[0] ? (
-                  <div className="relative z-10">
-                    <div className="w-40 h-28 rounded-md bg-white border overflow-hidden cursor-pointer"
-                      onClick={()=>{ setViewerPhotos(selected.photos||[]); setViewerIndex(0); setViewerFile(selected.photos?.[0]); }}>
-                      <MiniPreview fileRef={selected.photos[0]} />
-                    </div>
-                    <button
-                      type="button"
-                      onClick={()=>document.getElementById(`profile-photos-${selected.id}`)?.click()}
-                      className="absolute -bottom-3 -right-3 z-20 w-8 h-8 rounded-full border bg-white shadow flex items-center justify-center"
-                      title="Add photo"
-                    >+</button>
-                  </div>
-                ) : (
+  <div className="relative z-10">
+    <div className="w-40 h-28 rounded-md bg-white border overflow-hidden cursor-pointer"
+      onClick={()=>{ setViewerPhotos(selected.photos||[]); setViewerIndex(0); setViewerFile(selected.photos?.[0]); }}>
+      <MiniPreview fileRef={selected.photos[0]} />
+    </div>
+
+    {/* delete overlay for first photo */}
+    <button
+      type="button"
+      aria-label="Delete photo"
+      className="absolute top-1 right-1 z-20 w-7 h-7 rounded-full border border-rose-300 text-rose-700 bg-white shadow flex items-center justify-center hover:bg-rose-50"
+      onClick={async(e)=>{ 
+        e.stopPropagation(); 
+        const ok = await askConfirm(); 
+        if(!ok) return; 
+        const first = selected.photos?.[0]; 
+        if(first) await deleteFileRef(first); 
+        updateProfile(selected.id,{photos:(selected.photos||[]).slice(1)});
+      }}
+      title="Delete photo"
+    >×</button>
+
+    <button
+      type="button"
+      onClick={()=>document.getElementById(`profile-photos-${selected.id}`)?.click()}
+      className="absolute -bottom-3 -right-3 z-20 w-8 h-8 rounded-full border bg-white shadow flex items-center justify-center"
+      title="Add photo"
+    >+</button>
+  </div>
+) : (
+
                   <button
                     type="button"
                     onClick={()=>document.getElementById(`profile-photos-${selected.id}`)?.click()}
