@@ -400,6 +400,109 @@ function Zoomer({ children, onLockChange }) {
     </div>
   );
 }
+// Pinch-zoom image that auto-fits to its container on load/resize.
+// Two-finger pinch & pan only (so one-finger swipes still work in Viewer).
+function ZoomImg({ src, alt = '', className = '' }) {
+  const wrapRef = React.useRef(null);
+  const imgRef  = React.useRef(null);
+  const [st, setSt] = React.useState({ scale: 1, min: 1, x: 0, y: 0 });
+
+  // Compute fit-to-container scale based on image natural size
+  const fit = React.useCallback(() => {
+    const wrap = wrapRef.current, img = imgRef.current;
+    if (!wrap || !img || !img.naturalWidth || !img.naturalHeight) return;
+    const w = wrap.clientWidth, h = wrap.clientHeight;
+    const fitScale = Math.min(w / img.naturalWidth, h / img.naturalHeight);
+    setSt({ scale: fitScale, min: fitScale, x: 0, y: 0 });
+  }, []);
+
+  // When src changes or loads, refit
+  React.useEffect(() => {
+    const img = imgRef.current;
+    if (!img) return;
+    if (img.complete && img.naturalWidth) fit();
+    else {
+      const on = () => fit();
+      img.addEventListener('load', on, { once: true });
+      return () => img.removeEventListener('load', on);
+    }
+  }, [src, fit]);
+
+  // Refit on container resize/orientation
+  React.useEffect(() => {
+    const ro = new ResizeObserver(fit);
+    if (wrapRef.current) ro.observe(wrapRef.current);
+    return () => ro.disconnect();
+  }, [fit]);
+
+  // Two-finger pinch + pan
+  const pinchRef = React.useRef(null);
+  const dist = (a, b) => Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+
+  const onTouchStart = (e) => {
+    if (e.touches.length === 2) {
+      e.stopPropagation();
+      const [t0, t1] = e.touches;
+      pinchRef.current = {
+        d0: dist(t0, t1),
+        cx0: (t0.clientX + t1.clientX) / 2,
+        cy0: (t0.clientY + t1.clientY) / 2,
+        x0: st.x, y0: st.y, s0: st.scale
+      };
+    }
+  };
+  const onTouchMove = (e) => {
+    if (e.touches.length === 2 && pinchRef.current) {
+      e.preventDefault(); // prevent page scroll
+      e.stopPropagation();
+      const [t0, t1] = e.touches;
+      const d = dist(t0, t1);
+      const cx = (t0.clientX + t1.clientX) / 2;
+      const cy = (t0.clientY + t1.clientY) / 2;
+      const ref = pinchRef.current;
+      const rawScale = ref.s0 * (d / ref.d0);
+      const newScale = Math.max(ref.min ?? st.min, Math.min(4, rawScale));
+      const dx = cx - ref.cx0;
+      const dy = cy - ref.cy0;
+      setSt(s => ({ ...s, scale: newScale, x: ref.x0 + dx, y: ref.y0 + dy }));
+    }
+  };
+  const onTouchEnd = () => {
+    if (!pinchRef.current) return;
+    // snap back if scaled below min (in case of quick pinch)
+    setSt(s => ({ ...s, scale: Math.max(s.min, s.scale) }));
+    pinchRef.current = null;
+  };
+
+  return (
+    <div
+      ref={wrapRef}
+      className={className}
+      style={{ position: 'relative', overflow: 'hidden', touchAction: 'none' }}
+      onTouchStart={onTouchStart}
+      onTouchMove={onTouchMove}
+      onTouchEnd={onTouchEnd}
+      onTouchCancel={onTouchEnd}
+    >
+      <img
+        ref={imgRef}
+        src={src}
+        alt={alt}
+        draggable={false}
+        style={{
+          position: 'absolute',
+          left: '50%',
+          top: '50%',
+          transform: `translate(-50%, -50%) translate(${st.x}px, ${st.y}px) scale(${st.scale})`,
+          transformOrigin: 'center center',
+          userSelect: 'none',
+          willChange: 'transform',
+          // No width/height here; we render at natural size and scale to fit.
+        }}
+      />
+    </div>
+  );
+}
 
 // ===== Viewer (images + PDF pages, proportional, swipe + pinch-zoom) =====
 function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }) {
@@ -549,23 +652,23 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
         <Zoomer onLockChange={setZoomLocked}>
           {isImg ? (
             currentPhotoUrl ? (
-              <img
-                src={currentPhotoUrl}
-                alt={(currentPhotoRef?.name) || 'image'}
-                className="w-full h-[90vh] object-contain select-none"
-                draggable={false}
-              />
+              <ZoomImg
+  key={currentPhotoUrl}
+  src={currentPhotoUrl}
+  alt={(currentPhotoRef?.name) || 'image'}
+  className="w-full h-[90vh]"
+/>
             ) : (
               <div className="p-6 text-center text-sm text-gray-500">Loading…</div>
             )
           ) : isPdf ? (
             pdfImg ? (
-              <img
-                src={pdfImg}
-                alt={`Page ${pdfPage}`}
-                className="w-full h-[90vh] object-contain select-none"
-                draggable={false}
-              />
+              <ZoomImg
+  key={`pdf-${pdfPage}-${fileRef?.id || ''}`}
+  src={pdfImg}
+  alt={`Page ${pdfPage}`}
+  className="w-full h-[90vh]"
+/>
             ) : pdfFallback && firstUrl ? (
               <iframe
                 key={`${firstUrl}#${pdfPage}`}
