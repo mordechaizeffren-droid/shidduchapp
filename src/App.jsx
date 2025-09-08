@@ -291,27 +291,26 @@ function MiniPreview({ fileRef }) {
 }
 
 
-// ===== Viewer (images + PDF pages) =====
-function Viewer({ fileRef, photos = [], startIndex = 0, onClose }) {
-  const firstUrl = useFilePreview(fileRef);
-  const isImg = (fileRef?.type || '').startsWith('image/');
-  const isPdf =
+// ===== Viewer (images + PDF pages, swipe-only, fit-to-frame) =====
+function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }) {
+  const isImgFile = (fileRef?.type || '').startsWith('image/');
+  const isPdfFile =
     (fileRef?.type || '').toLowerCase() === 'application/pdf' ||
     (fileRef?.name || '').toLowerCase().endsWith('.pdf');
 
-  // image gallery index
+  // gallery index (for images)
   const [idx, setIdx] = useState(startIndex);
   useEffect(() => setIdx(startIndex), [startIndex, fileRef?.id]);
 
-  // pdf page index + (optional) total pages if we can detect them
+  // pdf page index + (optional) total pages
   const [pdfPage, setPdfPage] = useState(1);
   const [pdfPages, setPdfPages] = useState(null);
   useEffect(() => { setPdfPage(1); setPdfPages(null); }, [fileRef?.id]);
 
-  // Try to detect total PDF pages (silent fallback if CDN blocked)
+  // Detect total pages (silent if blocked)
   useEffect(() => {
     (async () => {
-      if (!isPdf || !fileRef?.id) return;
+      if (!isPdfFile || !fileRef?.id) return;
       try {
         const blob = await dbFiles.getItem(fileRef.id);
         if (!blob?.arrayBuffer) return;
@@ -321,13 +320,19 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose }) {
         const pdf = await task.promise;
         setPdfPages(pdf.numPages || null);
         pdf.destroy?.();
-      } catch { /* ignore, viewer still works without page count */ }
+      } catch {}
     })();
-  }, [isPdf, fileRef?.id]);
+  }, [isPdfFile, fileRef?.id]);
 
   // Which thing are we showing right now?
-  const currentRef = isImg && photos.length ? photos[idx] : fileRef;
-  const currentUrl = useFilePreview(currentRef);
+  const currentRef = isImgFile && photos.length ? photos[idx] : fileRef;
+  const currentUrl = useFilePreview(currentRef);   // ← single hook call (fixes blank viewer)
+  const pdfUrl     = useFilePreview(fileRef);      // base URL for pdf pages
+
+  // Build PDF src with fit-to-frame hint
+  const pdfSrc = isPdfFile && pdfUrl
+    ? `${pdfUrl}#page=${pdfPage}&zoom=auto&view=FitH`
+    : null;
 
   // Gestures: left/right to change, down to close
   const HORIZ_SWIPE = 60;  // px
@@ -336,7 +341,7 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose }) {
   const [drag, setDrag] = useState({ active:false, startX:0, startY:0, dx:0, dy:0 });
 
   const onTouchStart = (e) => {
-    if (e.touches.length !== 1) return; // ignore pinch
+    if (e.touches.length !== 1) return;
     const t = e.touches[0];
     setDrag({ active:true, startX:t.clientX, startY:t.clientY, dx:0, dy:0 });
   };
@@ -350,22 +355,20 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose }) {
     const { dx, dy } = drag;
     const absX = Math.abs(dx), absY = Math.abs(dy);
 
-    // Down to close (clear vertical intent)
+    // Down to close
     if (absY - absX > ANGLE_GUARD && dy > VERT_CLOSE) {
       setDrag({ active:false, startX:0, startY:0, dx:0, dy:0 });
       onClose();
       return;
     }
 
-    // Horizontal navigation (clear horizontal intent)
+    // Horizontal navigation
     if (absX - absY > ANGLE_GUARD && absX > HORIZ_SWIPE) {
-      if (isImg && photos.length > 1) {
-        if (dx < 0) setIdx(i => (i + 1) % photos.length);
-        else        setIdx(i => (i - 1 + photos.length) % photos.length);
-      } else if (isPdf) {
-        // If we know total pages, clamp; otherwise allow best-effort paging
-        if (dx < 0) setPdfPage(p => (pdfPages ? Math.min(pdfPages, p + 1) : p + 1));
-        else        setPdfPage(p => Math.max(1, p - 1));
+      if (isImgFile && photos.length > 1) {
+        setIdx(i => dx < 0 ? (i + 1) % photos.length : (i - 1 + photos.length) % photos.length);
+      } else if (isPdfFile) {
+        setPdfPage(p => dx < 0 ? (pdfPages ? Math.min(pdfPages, p + 1) : p + 1)
+                               : Math.max(1, p - 1));
       }
     }
 
@@ -377,22 +380,17 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose }) {
     const onKey = (e) => {
       if (e.key === 'Escape') onClose();
       if (e.key === 'ArrowLeft') {
-        if (isImg && photos.length > 1) setIdx(i => (i - 1 + photos.length) % photos.length);
-        else if (isPdf) setPdfPage(p => Math.max(1, p - 1));
+        if (isImgFile && photos.length > 1) setIdx(i => (i - 1 + photos.length) % photos.length);
+        else if (isPdfFile) setPdfPage(p => Math.max(1, p - 1));
       }
       if (e.key === 'ArrowRight') {
-        if (isImg && photos.length > 1) setIdx(i => (i + 1) % photos.length);
-        else if (isPdf) setPdfPage(p => (pdfPages ? Math.min(pdfPages, p + 1) : p + 1));
+        if (isImgFile && photos.length > 1) setIdx(i => (i + 1) % photos.length);
+        else if (isPdfFile) setPdfPage(p => (pdfPages ? Math.min(pdfPages, p + 1) : p + 1));
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [isImg, isPdf, photos.length, pdfPages, onClose]);
-
-  // Build PDF src with page-fit scaling
-  const pdfSrc = isPdf && firstUrl
-    ? `${firstUrl}#page=${pdfPage}&view=FitH&zoom=page-fit`
-    : null;
+  }, [isImgFile, isPdfFile, photos.length, pdfPages, onClose]);
 
   return (
     <div
@@ -415,19 +413,21 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose }) {
       >
         {/* Content */}
         {currentUrl ? (
-          isImg ? (
+          (currentRef?.type || '').startsWith('image/') ? (
             <img
-              src={useFilePreview(isImg && photos.length ? photos[idx] : fileRef)}
+              src={currentUrl}
               alt={currentRef?.name || 'image'}
               className="w-full h-[90vh] object-contain select-none"
               draggable={false}
             />
-          ) : isPdf ? (
-            <iframe
-              key={`${pdfSrc}`}       // force refresh on page change
-              src={pdfSrc}
-              title="PDF"
-              className="w-full h-[90vh] pointer-events-none" // let gestures work
+          ) : isPdfFile ? (
+            // Use <object> and disable pointer events so swipe works anywhere
+            <object
+              key={pdfSrc}
+              data={pdfSrc}
+              type="application/pdf"
+              className="w-full h-[90vh] pointer-events-none"
+              aria-label="PDF viewer"
             />
           ) : (
             <div className="p-6 text-center text-sm text-gray-500">No inline preview available.</div>
@@ -436,31 +436,21 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose }) {
           <div className="p-6 text-center text-sm text-gray-500">Loading…</div>
         )}
 
-        {/* Nav arrows (images or pdf pages) */}
-        {((isImg && photos.length > 1) || (isPdf && (pdfPages ? pdfPages > 1 : true))) && (
-          <>
-            <button
-              className="absolute left-2 top-1/2 -translate-y-1/2 bg-white/80 hover:bg-white rounded-full w-8 h-8 flex items-center justify-center"
-              onClick={() => {
-                if (isImg && photos.length > 1) setIdx(i => (i - 1 + photos.length) % photos.length);
-                else if (isPdf) setPdfPage(p => Math.max(1, p - 1));
-              }}
-              aria-label="Previous"
-            >‹</button>
-            <button
-              className="absolute right-2 top-1/2 -translate-y-1/2 bg-white/80 hover:bg-white rounded-full w-8 h-8 flex items-center justify-center"
-              onClick={() => {
-                if (isImg && photos.length > 1) setIdx(i => (i + 1) % photos.length);
-                else if (isPdf) setPdfPage(p => (pdfPages ? Math.min(pdfPages, p + 1) : p + 1));
-              }}
-              aria-label="Next"
-            >›</button>
-          </>
+        {/* Delete (only for images, only if handler supplied) */}
+        {(isImgFile && typeof onDeletePhoto === 'function' && photos.length) && (
+          <button
+            className="absolute top-3 right-3 text-xs px-2 py-1 rounded border bg-white/90 hover:bg-white"
+            onClick={() => onDeletePhoto(idx, photos[idx])}
+            aria-label="Delete photo"
+          >
+            Delete
+          </button>
         )}
       </div>
     </div>
   );
 }
+
 // ===== Small menus / actions re-add =====
 function PillMenu({ label, options=[], onPick, strong }) {
   const [open, setOpen] = useState(false);
