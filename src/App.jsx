@@ -856,14 +856,18 @@ const [viewerProspectId, setViewerProspectId] = useState('');
         onDragOver={(e)=>e.preventDefault()}
       >
         {/* header with inline pills */}
-        <div className="p-2 flex flex-wrap items-center gap-2">
+        <div
+  className="p-2 flex flex-wrap items-center gap-2 cursor-pointer"
+  onClick={() => { if (!isOpen) toggleOpen(p.id); }}
+>
           <EditableText
-            value={p.fullName || ''}
-            placeholder="name..."
-            onChange={(v)=>updateP(p.id,{ fullName:v })}
-            className="font-medium truncate"
-            inputClass="font-medium truncate border rounded px-2 py-1 select-text"
-          />
+  value={p.fullName || ''}
+  placeholder="name..."
+  onChange={(v)=>updateP(p.id,{ fullName:v })}
+  className="font-medium truncate"
+  inputClass="font-medium truncate border rounded px-2 py-1 select-text"
+  disabled={!isOpen}
+/>
 
           {/* quick-glance pills on the same line (hidden when expanded) */}
           {!expanded[p.id] && (
@@ -881,22 +885,13 @@ const [viewerProspectId, setViewerProspectId] = useState('');
           )}
 
           <div className="ml-auto flex items-center gap-2">
-            {/* expand / collapse icon next to X */}
-            <IconBtn
-  ariaLabel={isOpen ? "Collapse" : "Expand"}
-  label={isOpen ? "Collapse" : "Expand"}
-  onClick={()=>toggleOpen(p.id)}
-  className="border-gray-300 text-gray-700 hover:bg-gray-50"
->
-  <ExpandIcon open={isOpen} key={isOpen ? 'in' : 'out'} />
-</IconBtn>
-
+            
             {/* header delete (uses custom confirm via removeP) */}
             <button
               type="button"
               aria-label="Delete"
               className="w-7 h-7 rounded-full border border-rose-300 text-rose-700 flex items-center justify-center hover:bg-rose-50"
-              onClick={()=>removeP(p.id)}
+              onClick={(e)=>{ e.stopPropagation(); removeP(p.id); }}
               title="Delete"
             >
               ×
@@ -1114,13 +1109,18 @@ function TrustSelect({ value, onChange }){
   );
 }
 
-function EditableText({ value, onChange, className, inputClass, placeholder="name..." }){
+function EditableText({ value, onChange, className, inputClass, placeholder="name...", disabled=false }){
   const [editing,setEditing]=useState(false); const [val,setVal]=useState(value);
   useEffect(()=>setVal(value),[value]);
   return editing? (
     <input className={`${inputClass} placeholder-gray-400`} value={val} autoFocus onChange={e=>setVal(e.target.value)} placeholder={placeholder} onKeyDown={e=>{ if(e.key==='Enter'){ onChange((val||'').trim()); setEditing(false);} if(e.key==='Escape'){ setEditing(false);} }} onBlur={()=>{ onChange((val||'').trim()); setEditing(false);} } />
   ) : (
-    <button className={className} onClick={()=>setEditing(true)} title="Tap to edit">
+    <button
+  className={className}
+  onClick={()=>{ if (!disabled) setEditing(true); }}
+  title={disabled ? undefined : "Tap to edit"}
+  disabled={disabled}
+>
       {value ? value : <span className="text-gray-400">{placeholder}</span>}
     </button>
   );
