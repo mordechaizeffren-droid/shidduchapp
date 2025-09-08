@@ -1520,22 +1520,41 @@ export default function App(){
       {/* Version label */}
       <div className="text-xs text-gray-500 mb-1">Shidduch Organizer • v2.0 (Lite)</div>
 
-           <div className="rounded-2xl border border-gray-200 bg-white shadow-sm -mt-2">
-  <div className="p-3">
-    {tab==='prospects' ? (
-      <Prospects
-        profile={profile}
-        saveProfile={saveProfile}
-        prospects={prospects}
-        setProspects={saveProspects}
-        activeProfileId={activeProfileId}
-        setActiveProfileId={setActiveProfileId}
-        unseenMap={unseenMap}
-        markSeen={markSeen}
-      />
-    ) : (
-      <MyProfile profile={profile} saveProfile={saveProfile} />
-    )}
+            {/* Folder Tabs (lifted) */}
+<div role="tablist" aria-label="Sections" className="mb-4">
+  <div className="relative">
+    {/* subtle baseline under tabs */}
+    <div className="absolute inset-x-0 bottom-0 h-px bg-gray-200" />
+
+    <div className="flex items-end gap-2">
+      <button
+        role="tab"
+        aria-selected={tab==='prospects'}
+        className={`px-3 py-2 rounded-t-xl border border-b-0 transition-all
+          ${tab==='prospects'
+            ? 'bg-gradient-to-b from-white to-gray-50 shadow-lg ring-1 ring-black/5 translate-y-[1px]'
+            : 'bg-gray-50 text-gray-700 hover:shadow-sm'
+          }`}
+        onClick={()=>setTab('prospects')}
+      >
+        Resumes
+      </button>
+
+      <div className="flex-1" />
+
+      <button
+        role="tab"
+        aria-selected={tab==='profile'}
+        className={`px-3 py-2 rounded-t-xl border border-b-0 transition-all
+          ${tab==='profile'
+            ? 'bg-gradient-to-b from-white to-gray-50 shadow-lg ring-1 ring-black/5 translate-y-[1px]'
+            : 'bg-gray-50 text-gray-700 hover:shadow-sm'
+          }`}
+        onClick={()=>setTab('profile')}
+      >
+        My Profile
+      </button>
+    </div>
   </div>
 </div>
 
@@ -1564,25 +1583,21 @@ export default function App(){
         onClose={()=>setSyncOpen(false)}
       />
 
-     {/* Content sheet */}
-<div className="rounded-2xl border border-gray-300 bg-white shadow-sm -mt-2">
-  <div className="p-3">
-    {tab==='prospects' ? (
-      <Prospects
-        profile={profile}
-        saveProfile={saveProfile}
-        prospects={prospects}
-        setProspects={saveProspects}
-        activeProfileId={activeProfileId}
-        setActiveProfileId={setActiveProfileId}
-        unseenMap={unseenMap}
-        markSeen={markSeen}
-      />
-    ) : (
-      <MyProfile profile={profile} saveProfile={saveProfile} />
-    )}
-  </div>
-</div>
+      {/* Content */}
+      {tab==='prospects' ? (
+        <Prospects
+          profile={profile}
+          saveProfile={saveProfile}
+          prospects={prospects}
+          setProspects={saveProspects}
+          activeProfileId={activeProfileId}
+          setActiveProfileId={setActiveProfileId}
+          unseenMap={unseenMap}
+          markSeen={markSeen}
+        />
+      ) : (
+        <MyProfile profile={profile} saveProfile={saveProfile} />
+      )}
     </div>
   );
 }
