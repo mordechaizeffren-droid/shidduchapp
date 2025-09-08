@@ -317,116 +317,15 @@ function loadPdfjs() {
 
 // Pinch-zoom image that auto-fits to its container on load/resize.
 // Two-finger pinch & pan only (so one-finger swipes still work in Viewer).
-function ZoomImg({ src, alt = '', className = '', onLockChange }) {
-  const wrapRef = React.useRef(null);
-  const [st, setSt] = React.useState({ scale: 1, x: 0, y: 0, pinch: false });
-  const ref = React.useRef(null);
-  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-  const MIN = 1, MAX = 4;
-
-  // Reset zoom when the source changes
-  React.useEffect(() => {
-    setSt({ scale: 1, x: 0, y: 0, pinch: false });
-  }, [src]);
-
-  // Tell parent when zooming/pinching is active
-  React.useEffect(() => {
-    onLockChange?.(st.scale > 1 || st.pinch);
-  }, [st.scale, st.pinch, onLockChange]);
-
-  const onStart = (e) => {
-    if (e.touches.length === 2) {
-      const [a, b] = e.touches;
-      ref.current = {
-        mode: 'pinch',
-        d0: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY),
-        s0: st.scale
-      };
-      setSt(s => ({ ...s, pinch: true }));
-      e.preventDefault();
-      e.stopPropagation();
-    } else if (e.touches.length === 1 && st.scale > 1) {
-      const t = e.touches[0];
-      ref.current = { mode: 'pan', lx: t.clientX, ly: t.clientY };
-      e.preventDefault();
-      // let it bubble so light swipes can still close/navigate if user barely moves
-    }
-  };
-
-  const onMove = (e) => {
-    if (!ref.current) return;
-
-    if (ref.current.mode === 'pinch' && e.touches.length === 2) {
-      const [a, b] = e.touches;
-      const d = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
-      const raw = ref.current.s0 * (d / ref.current.d0);
-      const scale = clamp(raw, MIN, MAX);
-      setSt(s => ({ ...s, scale }));
-      e.preventDefault();
-      e.stopPropagation();
-    } else if (ref.current.mode === 'pan' && e.touches.length === 1) {
-      const t = e.touches[0];
-      const dx = t.clientX - ref.current.lx;
-      const dy = t.clientY - ref.current.ly;
-      ref.current.lx = t.clientX;
-      ref.current.ly = t.clientY;
-
-      setSt(s => {
-        const el = wrapRef.current;
-        const w = el?.clientWidth || 0, h = el?.clientHeight || 0;
-        const maxX = (w * (s.scale - 1)) / 2 + 40; // soft bounds
-        const maxY = (h * (s.scale - 1)) / 2 + 40;
-        return {
-          ...s,
-          x: clamp(s.x + dx, -maxX, maxX),
-          y: clamp(s.y + dy, -maxY, maxY),
-        };
-      });
-
-      e.preventDefault();
-    }
-  };
-
-  const onEnd = () => {
-    setSt(s => ({ ...s, pinch: false }));
-    ref.current = null;
-  };
-
+function ZoomImg({ src, alt = '', className = '' }) {
   return (
-    <div
-      ref={wrapRef}
-      className={className}
-      style={{ position: 'relative', overflow: 'hidden', touchAction: 'none' }}
-      onTouchStart={onStart}
-      onTouchMove={onMove}
-      onTouchEnd={onEnd}
-      onTouchCancel={onEnd}
-    >
-      <div
-        style={{
-          width: '100%',
-          height: '100%',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          transform: `translate3d(${st.x}px, ${st.y}px, 0) scale(${st.scale})`,
-          transformOrigin: 'center center',
-          transition: st.pinch ? 'none' : 'transform 90ms ease-out',
-        }}
-      >
-        <img
-          src={src}
-          alt={alt}
-          draggable={false}
-          style={{
-            width: '100%',
-            height: '100%',
-            objectFit: 'contain',     // <- always start fit & proportional
-            userSelect: 'none',
-          }}
-        />
-      </div>
-    </div>
+    <img
+      src={src}
+      alt={alt}
+      draggable={false}
+      className={`${className} max-w-full max-h-full object-contain select-none`}
+      style={{ userSelect: 'none' }}
+    />
   );
 }
 
