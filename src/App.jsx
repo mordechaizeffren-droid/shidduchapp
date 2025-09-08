@@ -317,76 +317,79 @@ function loadPdfjs() {
 
 // Pinch-zoom image that auto-fits to its container on load/resize.
 // Two-finger pinch & pan only (so one-finger swipes still work in Viewer).
-function ZoomImg({ src, alt = '', className = '' }) {
+function ZoomImg({ src, alt = '', className = '', onLockChange }) {
   const wrapRef = React.useRef(null);
-  const imgRef  = React.useRef(null);
-  const [st, setSt] = React.useState({ scale: 1, min: 1, x: 0, y: 0 });
+  const [st, setSt] = React.useState({ scale: 1, x: 0, y: 0, pinch: false });
+  const ref = React.useRef(null);
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const MIN = 1, MAX = 4;
 
-  // Compute fit-to-container scale based on image natural size
-  const fit = React.useCallback(() => {
-    const wrap = wrapRef.current, img = imgRef.current;
-    if (!wrap || !img || !img.naturalWidth || !img.naturalHeight) return;
-    const w = wrap.clientWidth, h = wrap.clientHeight;
-    const fitScale = Math.min(w / img.naturalWidth, h / img.naturalHeight);
-    setSt({ scale: fitScale, min: fitScale, x: 0, y: 0 });
-  }, []);
-
-  // When src changes or loads, refit
+  // Reset zoom when the source changes
   React.useEffect(() => {
-    const img = imgRef.current;
-    if (!img) return;
-    if (img.complete && img.naturalWidth) fit();
-    else {
-      const on = () => fit();
-      img.addEventListener('load', on, { once: true });
-      return () => img.removeEventListener('load', on);
-    }
-  }, [src, fit]);
+    setSt({ scale: 1, x: 0, y: 0, pinch: false });
+  }, [src]);
 
-  // Refit on container resize/orientation
+  // Tell parent when zooming/pinching is active
   React.useEffect(() => {
-    const ro = new ResizeObserver(fit);
-    if (wrapRef.current) ro.observe(wrapRef.current);
-    return () => ro.disconnect();
-  }, [fit]);
+    onLockChange?.(st.scale > 1 || st.pinch);
+  }, [st.scale, st.pinch, onLockChange]);
 
-  // Two-finger pinch + pan
-  const pinchRef = React.useRef(null);
-  const dist = (a, b) => Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
-
-  const onTouchStart = (e) => {
+  const onStart = (e) => {
     if (e.touches.length === 2) {
-      e.stopPropagation();
-      const [t0, t1] = e.touches;
-      pinchRef.current = {
-        d0: dist(t0, t1),
-        cx0: (t0.clientX + t1.clientX) / 2,
-        cy0: (t0.clientY + t1.clientY) / 2,
-        x0: st.x, y0: st.y, s0: st.scale
+      const [a, b] = e.touches;
+      ref.current = {
+        mode: 'pinch',
+        d0: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY),
+        s0: st.scale
       };
-    }
-  };
-  const onTouchMove = (e) => {
-    if (e.touches.length === 2 && pinchRef.current) {
-      e.preventDefault(); // prevent page scroll
+      setSt(s => ({ ...s, pinch: true }));
+      e.preventDefault();
       e.stopPropagation();
-      const [t0, t1] = e.touches;
-      const d = dist(t0, t1);
-      const cx = (t0.clientX + t1.clientX) / 2;
-      const cy = (t0.clientY + t1.clientY) / 2;
-      const ref = pinchRef.current;
-      const rawScale = ref.s0 * (d / ref.d0);
-      const newScale = Math.max(ref.min ?? st.min, Math.min(4, rawScale));
-      const dx = cx - ref.cx0;
-      const dy = cy - ref.cy0;
-      setSt(s => ({ ...s, scale: newScale, x: ref.x0 + dx, y: ref.y0 + dy }));
+    } else if (e.touches.length === 1 && st.scale > 1) {
+      const t = e.touches[0];
+      ref.current = { mode: 'pan', lx: t.clientX, ly: t.clientY };
+      e.preventDefault();
+      // let it bubble so light swipes can still close/navigate if user barely moves
     }
   };
-  const onTouchEnd = () => {
-    if (!pinchRef.current) return;
-    // snap back if scaled below min (in case of quick pinch)
-    setSt(s => ({ ...s, scale: Math.max(s.min, s.scale) }));
-    pinchRef.current = null;
+
+  const onMove = (e) => {
+    if (!ref.current) return;
+
+    if (ref.current.mode === 'pinch' && e.touches.length === 2) {
+      const [a, b] = e.touches;
+      const d = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+      const raw = ref.current.s0 * (d / ref.current.d0);
+      const scale = clamp(raw, MIN, MAX);
+      setSt(s => ({ ...s, scale }));
+      e.preventDefault();
+      e.stopPropagation();
+    } else if (ref.current.mode === 'pan' && e.touches.length === 1) {
+      const t = e.touches[0];
+      const dx = t.clientX - ref.current.lx;
+      const dy = t.clientY - ref.current.ly;
+      ref.current.lx = t.clientX;
+      ref.current.ly = t.clientY;
+
+      setSt(s => {
+        const el = wrapRef.current;
+        const w = el?.clientWidth || 0, h = el?.clientHeight || 0;
+        const maxX = (w * (s.scale - 1)) / 2 + 40; // soft bounds
+        const maxY = (h * (s.scale - 1)) / 2 + 40;
+        return {
+          ...s,
+          x: clamp(s.x + dx, -maxX, maxX),
+          y: clamp(s.y + dy, -maxY, maxY),
+        };
+      });
+
+      e.preventDefault();
+    }
+  };
+
+  const onEnd = () => {
+    setSt(s => ({ ...s, pinch: false }));
+    ref.current = null;
   };
 
   return (
@@ -394,27 +397,35 @@ function ZoomImg({ src, alt = '', className = '' }) {
       ref={wrapRef}
       className={className}
       style={{ position: 'relative', overflow: 'hidden', touchAction: 'none' }}
-      onTouchStart={onTouchStart}
-      onTouchMove={onTouchMove}
-      onTouchEnd={onTouchEnd}
-      onTouchCancel={onTouchEnd}
+      onTouchStart={onStart}
+      onTouchMove={onMove}
+      onTouchEnd={onEnd}
+      onTouchCancel={onEnd}
     >
-      <img
-        ref={imgRef}
-        src={src}
-        alt={alt}
-        draggable={false}
+      <div
         style={{
-          position: 'absolute',
-          left: '50%',
-          top: '50%',
-          transform: `translate(-50%, -50%) translate(${st.x}px, ${st.y}px) scale(${st.scale})`,
+          width: '100%',
+          height: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          transform: `translate3d(${st.x}px, ${st.y}px, 0) scale(${st.scale})`,
           transformOrigin: 'center center',
-          userSelect: 'none',
-          willChange: 'transform',
-          // No width/height here; we render at natural size and scale to fit.
+          transition: st.pinch ? 'none' : 'transform 90ms ease-out',
         }}
-      />
+      >
+        <img
+          src={src}
+          alt={alt}
+          draggable={false}
+          style={{
+            width: '100%',
+            height: '100%',
+            objectFit: 'contain',     // <- always start fit & proportional
+            userSelect: 'none',
+          }}
+        />
+      </div>
     </div>
   );
 }
@@ -566,22 +577,26 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
         {isImg ? (
   currentPhotoUrl ? (
     <ZoomImg
-      key={currentPhotoUrl}
-      src={currentPhotoUrl}
-      alt={(currentPhotoRef?.name) || 'image'}
-      className="w-full h-[90vh]"
-    />
+  key={currentPhotoUrl}
+  src={currentPhotoUrl}
+  alt={(currentPhotoRef?.name) || 'image'}
+  className="w-full h-[90vh]"
+  onLockChange={setZoomLocked}
+/>
+
   ) : (
     <div className="p-6 text-center text-sm text-gray-500">Loading…</div>
   )
 ) : isPdf ? (
   pdfImg ? (
     <ZoomImg
-      key={`pdf-${pdfPage}-${fileRef?.id || ''}`}
-      src={pdfImg}
-      alt={`Page ${pdfPage}`}
-      className="w-full h-[90vh]"
-    />
+  key={`pdf-${pdfPage}-${fileRef?.id || ''}`}
+  src={pdfImg}
+  alt={`Page ${pdfPage}`}
+  className="w-full h-[90vh]"
+  onLockChange={setZoomLocked}
+/>
+
   ) : pdfFallback && firstUrl ? (
     <iframe
       key={`${firstUrl}#${pdfPage}`}
