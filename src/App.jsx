@@ -315,91 +315,6 @@ function loadPdfjs() {
   return __pdfjsPromise;
 }
 
-// --- Helper: pinch-zoom + pan wrapper ---------------------------------------
-function Zoomer({ children, onLockChange }) {
-  const wrapRef = React.useRef(null);
-  const [st, setSt] = React.useState({ scale: 1, panX: 0, panY: 0, pinch: false });
-  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-  const MIN = 1, MAX = 4;
-  const ref = React.useRef({}); // gesture scratchpad
-
-  // Tell parent when zoom/pinch is active (to disable swipe nav/dismiss)
-  React.useEffect(() => {
-    onLockChange?.(st.scale > 1 || st.pinch);
-  }, [st.scale, st.pinch, onLockChange]);
-
-  const onStart = (e) => {
-    if (e.touches.length === 2) {
-      const [a, b] = e.touches;
-      const dx = a.clientX - b.clientX, dy = a.clientY - b.clientY;
-      ref.current.startDist = Math.hypot(dx, dy);
-      ref.current.startScale = st.scale;
-      setSt(s => ({ ...s, pinch: true }));
-      e.preventDefault();
-    } else if (e.touches.length === 1 && st.scale > 1) {
-      ref.current.last = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-      e.preventDefault();
-    }
-  };
-
-  const onMove = (e) => {
-    if (e.touches.length === 2 && ref.current.startDist) {
-      const [a, b] = e.touches;
-      const dx = a.clientX - b.clientX, dy = a.clientY - b.clientY;
-      const dist = Math.hypot(dx, dy);
-      let scale = clamp(ref.current.startScale * (dist / ref.current.startDist), MIN, MAX);
-      setSt(s => ({ ...s, scale }));
-      e.preventDefault();
-    } else if (e.touches.length === 1 && st.scale > 1 && ref.current.last) {
-      const t = e.touches[0];
-      const dx = t.clientX - ref.current.last.x;
-      const dy = t.clientY - ref.current.last.y;
-      ref.current.last = { x: t.clientX, y: t.clientY };
-
-      setSt(s => {
-        const el = wrapRef.current;
-        if (!el) return { ...s, panX: s.panX + dx, panY: s.panY + dy };
-        const rect = el.getBoundingClientRect();
-        const maxX = (rect.width  * (s.scale - 1)) / 2 + 40; // soft bounds
-        const maxY = (rect.height * (s.scale - 1)) / 2 + 40;
-        return {
-          ...s,
-          panX: clamp(s.panX + dx, -maxX, maxX),
-          panY: clamp(s.panY + dy, -maxY, maxY),
-        };
-      });
-      e.preventDefault();
-    }
-  };
-
-  const onEnd = () => {
-    // finish pinch; snap back if scale ~1
-    setSt(s => (s.scale <= 1.01 ? { scale: 1, panX: 0, panY: 0, pinch: false } : { ...s, pinch: false }));
-  };
-
-  return (
-    <div
-      ref={wrapRef}
-      className="w-full h-[90vh] overflow-hidden"
-      style={{ touchAction: 'none' }}                 // allow custom gestures
-      onTouchStart={onStart}
-      onTouchMove={onMove}
-      onTouchEnd={onEnd}
-      onTouchCancel={onEnd}
-    >
-      <div
-        className="w-full h-full flex items-center justify-center"
-        style={{
-          transform: `translate3d(${st.panX}px, ${st.panY}px, 0) scale(${st.scale})`,
-          transformOrigin: 'center center',
-          transition: st.pinch ? 'none' : 'transform 90ms ease-out',
-        }}
-      >
-        {children}
-      </div>
-    </div>
-  );
-}
 // Pinch-zoom image that auto-fits to its container on load/resize.
 // Two-finger pinch & pan only (so one-finger swipes still work in Viewer).
 function ZoomImg({ src, alt = '', className = '' }) {
@@ -648,43 +563,40 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
           transition: drag.active ? 'none' : 'transform 160ms ease-out',
         }}
       >
-        {/* CONTENT wrapped in Zoomer (enables pinch zoom + pan) */}
-        <Zoomer onLockChange={setZoomLocked}>
-          {isImg ? (
-            currentPhotoUrl ? (
-              <ZoomImg
-  key={currentPhotoUrl}
-  src={currentPhotoUrl}
-  alt={(currentPhotoRef?.name) || 'image'}
-  className="w-full h-[90vh]"
-/>
-            ) : (
-              <div className="p-6 text-center text-sm text-gray-500">Loading…</div>
-            )
-          ) : isPdf ? (
-            pdfImg ? (
-              <ZoomImg
-  key={`pdf-${pdfPage}-${fileRef?.id || ''}`}
-  src={pdfImg}
-  alt={`Page ${pdfPage}`}
-  className="w-full h-[90vh]"
-/>
-            ) : pdfFallback && firstUrl ? (
-              <iframe
-                key={`${firstUrl}#${pdfPage}`}
-                src={`${firstUrl}#page=${pdfPage}&view=FitH&zoom=page-fit&toolbar=0&navpanes=0`}
-                title="PDF"
-                className="w-full h-[90vh] pointer-events-none"
-              />
-            ) : pdfLoading ? (
-              <div className="p-6 text-center text-sm text-gray-500">Loading…</div>
-            ) : (
-              <div className="p-6 text-center text-sm text-gray-500">Unable to render PDF.</div>
-            )
-          ) : (
-            <div className="p-6 text-center text-sm text-gray-500">No preview available.</div>
-          )}
-        </Zoomer>
+        {isImg ? (
+  currentPhotoUrl ? (
+    <ZoomImg
+      key={currentPhotoUrl}
+      src={currentPhotoUrl}
+      alt={(currentPhotoRef?.name) || 'image'}
+      className="w-full h-[90vh]"
+    />
+  ) : (
+    <div className="p-6 text-center text-sm text-gray-500">Loading…</div>
+  )
+) : isPdf ? (
+  pdfImg ? (
+    <ZoomImg
+      key={`pdf-${pdfPage}-${fileRef?.id || ''}`}
+      src={pdfImg}
+      alt={`Page ${pdfPage}`}
+      className="w-full h-[90vh]"
+    />
+  ) : pdfFallback && firstUrl ? (
+    <iframe
+      key={`${firstUrl}#${pdfPage}`}
+      src={`${firstUrl}#page=${pdfPage}&view=FitH&zoom=page-fit&toolbar=0&navpanes=0`}
+      title="PDF"
+      className="w-full h-[90vh] pointer-events-none"
+    />
+  ) : pdfLoading ? (
+    <div className="p-6 text-center text-sm text-gray-500">Loading…</div>
+  ) : (
+    <div className="p-6 text-center text-sm text-gray-500">Unable to render PDF.</div>
+  )
+) : (
+  <div className="p-6 text-center text-sm text-gray-500">No preview available.</div>
+)}
 
         {/* Optional delete (photos only) */}
         {isImg && typeof onDeletePhoto === 'function' && photos.length > 0 && (
