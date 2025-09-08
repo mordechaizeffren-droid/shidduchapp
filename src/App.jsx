@@ -1269,13 +1269,13 @@ function FullProspectEditor({ prospect, allProfiles, onChange, onClose, onDelete
       onChange={(e) => onChange({ notes: e.target.value })}
     />
     <IconBtn
-      ariaLabel="Share notes"
-      label="Share"
-      onClick={() => shareText(p.notes || '')}
-      className="absolute left-2 bottom-2 border-blue-300 text-blue-700 hover:bg-blue-50"
-    >
-      <IconShare />
-    </IconBtn>
+  ariaLabel="Share notes"
+  label="Share"
+  onClick={() => shareText(p.notes || '')}
+  className="absolute -bottom-3 -left-3 z-20 border-blue-300 text-blue-700 bg-white/90 hover:bg-white"
+>
+  <IconShare />
+</IconBtn>
   </div>
 </div>
 
