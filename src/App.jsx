@@ -369,24 +369,31 @@ const isIOS =
           {currentUrl ? (
             currentIsImg ? (
               <img src={currentUrl} alt={currentRef?.name || 'image'} className="w-full h-[85vh] object-contain select-none" draggable={false} />
-            ) : currentIsPdf ? (
+           ) : currentIsPdf ? (
   isIOS ? (
+    // iOS: render with <object> and force letterbox "contain" fit
     <object
       data={currentUrl}
       type="application/pdf"
-      className="w-full h-[85vh]"
-      // allow pinch zoom/scroll on iOS
-      style={{ touchAction: 'pan-y pinch-zoom' }}
+      className="w-full h-[85vh] bg-black/5"
+      // Keep proportions & let it letterbox instead of stretching
+      style={{
+        objectFit: 'contain',
+        // allow pinch zoom; Safari respects this for embedded viewer
+        touchAction: 'pan-y pinch-zoom'
+      }}
     />
   ) : (
+    // Non-iOS: iframe with page-fit hint; browser keeps proportions
     <iframe
       key={currentRef?.id || currentUrl}
-      src={currentUrl}  // no forced zoom params
+      src={`${currentUrl}#zoom=page-fit`}
       title="Preview"
-      className="w-full h-[85vh]"
+      className="w-full h-[85vh] bg-black/5"
     />
   )
 ) : (
+
 
               <div className="p-6 text-center text-sm text-gray-500">No inline preview available.</div>
             )
