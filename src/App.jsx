@@ -1111,24 +1111,25 @@ function FullProspectEditor({ prospect, allProfiles, onChange, onClose, onDelete
           <MiniPreview fileRef={p.resume} />
         </div>
 
-        {/* floating buttons */}
-        <IconBtn
-          ariaLabel="Share resume"
-          label="Share"
-          onClick={(e) => { e.stopPropagation(); shareRef(p.resume, 'resume'); }}
-          className="absolute bottom-2 left-2 z-20 border-blue-300 text-blue-700 bg-white/90 hover:bg-white"
-        >
-          <IconShare />
-        </IconBtn>
+        {/* Share (outside, bottom-left) */}
+<IconBtn
+  ariaLabel="Share resume"
+  label="Share"
+  onClick={(e) => { e.stopPropagation(); shareRef(p.resume, 'resume'); }}
+  className="absolute -bottom-3 -left-3 z-20 border-blue-300 text-blue-700 bg-white/90 hover:bg-white"
+>
+  <IconShare />
+</IconBtn>
 
-        <IconBtn
-          ariaLabel="Download resume"
-          label="Download"
-          onClick={(e) => { e.stopPropagation(); downloadRef(p.resume); }}
-          className="absolute bottom-2 left-16 z-20 border-emerald-300 text-emerald-700 bg-white/90 hover:bg-white"
-        >
-          <IconDownload />
-        </IconBtn>
+{/* Download (outside, bottom edge) */}
+<IconBtn
+  ariaLabel="Download resume"
+  label="Download"
+  onClick={(e) => { e.stopPropagation(); downloadRef(p.resume); }}
+  className="absolute -bottom-3 left-10 z-20 border-emerald-300 text-emerald-700 bg-white/90 hover:bg-white"
+>
+  <IconDownload />
+</IconBtn>
 
         <IconBtn
           ariaLabel="Delete resume"
@@ -1195,34 +1196,36 @@ function FullProspectEditor({ prospect, allProfiles, onChange, onClose, onDelete
           </div>
 
           {/* floating buttons */}
-          <IconBtn
-            ariaLabel="Share photos"
-            label="Share"
-            onClick={(e) => { e.stopPropagation(); if (p.photos?.[0]) shareRef(p.photos[0], 'photo'); }}
-            className="absolute bottom-2 left-2 z-20 border-blue-300 text-blue-700 bg-white/90 hover:bg-white"
-          >
-            <IconShare />
-          </IconBtn>
+          {/* Share (outside, bottom-left) */}
+<IconBtn
+  ariaLabel="Share photos"
+  label="Share"
+  onClick={(e) => { e.stopPropagation(); if (p.photos?.[0]) shareRef(p.photos[0], 'photo'); }}
+  className="absolute -bottom-3 -left-3 z-20 border-blue-300 text-blue-700 bg-white/90 hover:bg-white"
+>
+  <IconShare />
+</IconBtn>
 
-          <IconBtn
-            ariaLabel="Download first photo"
-            label="Download"
-            onClick={(e) => { e.stopPropagation(); if (p.photos?.[0]) downloadRef(p.photos[0]); }}
-            className="absolute bottom-2 left-16 z-20 border-emerald-300 text-emerald-700 bg-white/90 hover:bg-white"
-          >
-            <IconDownload />
-          </IconBtn>
+{/* Download (outside, bottom edge) */}
+<IconBtn
+  ariaLabel="Download first photo"
+  label="Download"
+  onClick={(e) => { e.stopPropagation(); if (p.photos?.[0]) downloadRef(p.photos[0]); }}
+  className="absolute -bottom-3 left-10 z-20 border-emerald-300 text-emerald-700 bg-white/90 hover:bg-white"
+>
+  <IconDownload />
+</IconBtn>
 
-          {/* add photo */}
-          <button
-            type="button"
-            onClick={() => document.getElementById(`fs-photos-${p.id}`)?.click()}
-            className="absolute bottom-2 right-2 z-20 w-9 h-9 rounded-full border bg-white shadow flex items-center justify-center"
-            title="Add photo"
-            aria-label="Add photo"
-          >
-            +
-          </button>
+{/* Add photo (outside, bottom-right) */}
+<button
+  type="button"
+  onClick={() => document.getElementById(`fs-photos-${p.id}`)?.click()}
+  className="absolute -bottom-3 -right-3 z-20 w-9 h-9 rounded-full border bg-white shadow flex items-center justify-center"
+  title="Add photo"
+  aria-label="Add photo"
+>
+  +
+</button>
         </div>
       ) : (
         <button
