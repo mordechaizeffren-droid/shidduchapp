@@ -291,108 +291,108 @@ function MiniPreview({ fileRef }) {
 }
 
 
-function Viewer({ fileRef, startIndex=0, photos=[], onClose, onDeletePhoto }) {
-  const url = useFilePreview(fileRef);
-  const isImg = (fileRef?.type || "").startsWith("image/");
+// ===== Viewer (images + PDF pages) =====
+function Viewer({ fileRef, photos = [], startIndex = 0, onClose }) {
+  const firstUrl = useFilePreview(fileRef);
+  const isImg = (fileRef?.type || '').startsWith('image/');
+  const isPdf =
+    (fileRef?.type || '').toLowerCase() === 'application/pdf' ||
+    (fileRef?.name || '').toLowerCase().endsWith('.pdf');
 
-  const currentIsPdf =
-    (fileRef?.type || "").toLowerCase() === "application/pdf" ||
-    (fileRef?.name || "").toLowerCase().endsWith(".pdf");
+  // image gallery index
+  const [idx, setIdx] = useState(startIndex);
+  useEffect(() => setIdx(startIndex), [startIndex, fileRef?.id]);
 
-  // iOS (incl. iPadOS) — use <object> for PDFs
-  const isIOS =
-    typeof navigator !== "undefined" &&
-    (/iPad|iPhone|iPod/.test(navigator.userAgent) ||
-      (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1));
+  // pdf page index + (optional) total pages if we can detect them
+  const [pdfPage, setPdfPage] = useState(1);
+  const [pdfPages, setPdfPages] = useState(null);
+  useEffect(() => { setPdfPage(1); setPdfPages(null); }, [fileRef?.id]);
 
-  // drag/swipe state (used to animate the sheet while swiping)
-  const [drag, setDrag] = useState({ active:false, startY:0, dy:0 });
-
-  // ESC closes
+  // Try to detect total PDF pages (silent fallback if CDN blocked)
   useEffect(() => {
-    const h = (e) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', h);
-    return () => window.removeEventListener('keydown', h);
-  }, [onClose]);
+    (async () => {
+      if (!isPdf || !fileRef?.id) return;
+      try {
+        const blob = await dbFiles.getItem(fileRef.id);
+        if (!blob?.arrayBuffer) return;
+        const ab = await blob.arrayBuffer();
+        const pdfjs = await import('https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.mjs');
+        const task = pdfjs.getDocument({ data: ab });
+        const pdf = await task.promise;
+        setPdfPages(pdf.numPages || null);
+        pdf.destroy?.();
+      } catch { /* ignore, viewer still works without page count */ }
+    })();
+  }, [isPdf, fileRef?.id]);
 
-  // IMAGE-ONLY: swipe on container
+  // Which thing are we showing right now?
+  const currentRef = isImg && photos.length ? photos[idx] : fileRef;
+  const currentUrl = useFilePreview(currentRef);
+
+  // Gestures: left/right to change, down to close
+  const HORIZ_SWIPE = 60;  // px
+  const VERT_CLOSE  = 80;  // px
+  const ANGLE_GUARD = 15;  // px bias to separate axes
+  const [drag, setDrag] = useState({ active:false, startX:0, startY:0, dx:0, dy:0 });
+
   const onTouchStart = (e) => {
     if (e.touches.length !== 1) return; // ignore pinch
-    setDrag({ active:true, startY:e.touches[0].clientY, dy:0 });
+    const t = e.touches[0];
+    setDrag({ active:true, startX:t.clientX, startY:t.clientY, dx:0, dy:0 });
   };
   const onTouchMove = (e) => {
     if (!drag.active || e.touches.length !== 1) return;
-    const dy = e.touches[0].clientY - drag.startY;
-    setDrag((d)=>({ ...d, dy }));
+    const t = e.touches[0];
+    setDrag(d => ({ ...d, dx: t.clientX - d.startX, dy: t.clientY - d.startY }));
   };
   const onTouchEnd = () => {
     if (!drag.active) return;
-    if (drag.dy > 60) onClose();
-    setDrag({ active:false, startY:0, dy:0 });
+    const { dx, dy } = drag;
+    const absX = Math.abs(dx), absY = Math.abs(dy);
+
+    // Down to close (clear vertical intent)
+    if (absY - absX > ANGLE_GUARD && dy > VERT_CLOSE) {
+      setDrag({ active:false, startX:0, startY:0, dx:0, dy:0 });
+      onClose();
+      return;
+    }
+
+    // Horizontal navigation (clear horizontal intent)
+    if (absX - absY > ANGLE_GUARD && absX > HORIZ_SWIPE) {
+      if (isImg && photos.length > 1) {
+        if (dx < 0) setIdx(i => (i + 1) % photos.length);
+        else        setIdx(i => (i - 1 + photos.length) % photos.length);
+      } else if (isPdf) {
+        // If we know total pages, clamp; otherwise allow best-effort paging
+        if (dx < 0) setPdfPage(p => (pdfPages ? Math.min(pdfPages, p + 1) : p + 1));
+        else        setPdfPage(p => Math.max(1, p - 1));
+      }
+    }
+
+    setDrag({ active:false, startX:0, startY:0, dx:0, dy:0 });
   };
 
-  // PDF: swipe anywhere (global listeners) without blocking pinch/scroll
+  // Keyboard helpers
   useEffect(() => {
-    if (!currentIsPdf) return;
-
-    let active = false;
-    let multi = false;
-    let startY = 0;
-    let lastDy = 0;
-
-    const gs = (e) => {
-      // start: allow only single finger
-      if (e.touches.length !== 1) { multi = true; active = false; return; }
-      multi = false;
-      active = true;
-      startY = e.touches[0].clientY;
-      lastDy = 0;
-      setDrag({ active:true, startY, dy:0 });
+    const onKey = (e) => {
+      if (e.key === 'Escape') onClose();
+      if (e.key === 'ArrowLeft') {
+        if (isImg && photos.length > 1) setIdx(i => (i - 1 + photos.length) % photos.length);
+        else if (isPdf) setPdfPage(p => Math.max(1, p - 1));
+      }
+      if (e.key === 'ArrowRight') {
+        if (isImg && photos.length > 1) setIdx(i => (i + 1) % photos.length);
+        else if (isPdf) setPdfPage(p => (pdfPages ? Math.min(pdfPages, p + 1) : p + 1));
+      }
     };
-    const gm = (e) => {
-      if (!active || multi || e.touches.length !== 1) return;
-      const dy = e.touches[0].clientY - startY;
-      lastDy = dy;
-      setDrag((d) => ({ ...d, dy }));
-    };
-    const ge = () => {
-      if (active && !multi && lastDy > 60) onClose();
-      active = false; multi = false; startY = 0; lastDy = 0;
-      setDrag({ active:false, startY:0, dy:0 });
-    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isImg, isPdf, photos.length, pdfPages, onClose]);
 
-    // passive listeners → don’t block PDF scroll/pinch
-    window.addEventListener('touchstart', gs, { passive: true });
-    window.addEventListener('touchmove', gm, { passive: true });
-    window.addEventListener('touchend', ge, { passive: true });
-
-    return () => {
-      window.removeEventListener('touchstart', gs, { passive: true });
-      window.removeEventListener('touchmove', gm, { passive: true });
-      window.removeEventListener('touchend', ge, { passive: true });
-    };
-  }, [currentIsPdf, onClose]);
-
-  // gallery (for photos)
-  const [idx, setIdx] = useState(startIndex);
-  useEffect(()=>setIdx(startIndex),[startIndex, fileRef?.id]);
-
-  const canGallery = isImg && photos.length > 0;
-  const currentRef = canGallery ? photos[idx] : fileRef;
-  const currentUrl = useFilePreview(currentRef);
-  const currentIsImg =
-    (currentRef?.type || "").startsWith("image/");
-  const currentIsPdf2 =
-    (currentRef?.type || "").toLowerCase() === "application/pdf" ||
-    (currentRef?.name || "").toLowerCase().endsWith(".pdf");
-
-  const goLeft  = () => { if (!canGallery || photos.length<2) return; setIdx((i)=> (i-1+photos.length)%photos.length); };
-  const goRight = () => { if (!canGallery || photos.length<2) return; setIdx((i)=> (i+1)%photos.length); };
-
-  useEffect(()=>{ if(!canGallery || photos.length<2) return;
-    const onKey=(e)=>{ if(e.key==='ArrowLeft') goLeft(); if(e.key==='ArrowRight') goRight(); };
-    window.addEventListener('keydown', onKey); return ()=>window.removeEventListener('keydown', onKey);
-  },[canGallery, photos.length]);
+  // Build PDF src with page-fit scaling
+  const pdfSrc = isPdf && firstUrl
+    ? `${firstUrl}#page=${pdfPage}&view=FitH&zoom=page-fit`
+    : null;
 
   return (
     <div
@@ -404,195 +404,60 @@ function Viewer({ fileRef, startIndex=0, photos=[], onClose, onDeletePhoto }) {
       <div
         className="max-w-[1000px] w-full max-h-[95vh] bg-white rounded-lg overflow-hidden relative"
         onClick={(e) => e.stopPropagation()}
-        // Images: attach swipe handlers here
-        onTouchStart={currentIsImg ? onTouchStart : undefined}
-        onTouchMove={currentIsImg ? onTouchMove : undefined}
-        onTouchEnd={currentIsImg ? onTouchEnd : undefined}
+        onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
+        onTouchEnd={onTouchEnd}
         style={{
-          transform: drag.active ? `translateY(${Math.max(0, drag.dy)}px)` : undefined,
-          transition: drag.active ? 'none' : 'transform 160ms ease-out'
+          transform: drag.active && drag.dy > 0 ? `translateY(${Math.max(0, drag.dy)}px)` : undefined,
+          transition: drag.active ? 'none' : 'transform 160ms ease-out',
+          touchAction: 'none'
         }}
       >
-        {/* top grab strip (visible, but swipe anywhere works for PDFs via global listeners) */}
-        <div className="h-6 flex items-center justify-center bg-gray-50">
-          <div className="w-12 h-1.5 rounded-full bg-gray-300" />
-        </div>
-
-        {/* DELETE (photos only) */}
-        {currentIsImg && typeof onDeletePhoto === 'function' && (
-          <button
-            type="button"
-            className="absolute top-3 right-3 z-20 px-2 py-1 rounded border border-rose-300 text-rose-700 bg-white/95 hover:bg-white"
-            onClick={(e)=>{ e.stopPropagation(); onDeletePhoto(idx, currentRef); }}
-            aria-label="Delete photo"
-            title="Delete photo"
-          >
-            Delete
-          </button>
+        {/* Content */}
+        {currentUrl ? (
+          isImg ? (
+            <img
+              src={useFilePreview(isImg && photos.length ? photos[idx] : fileRef)}
+              alt={currentRef?.name || 'image'}
+              className="w-full h-[90vh] object-contain select-none"
+              draggable={false}
+            />
+          ) : isPdf ? (
+            <iframe
+              key={`${pdfSrc}`}       // force refresh on page change
+              src={pdfSrc}
+              title="PDF"
+              className="w-full h-[90vh] pointer-events-none" // let gestures work
+            />
+          ) : (
+            <div className="p-6 text-center text-sm text-gray-500">No inline preview available.</div>
+          )
+        ) : (
+          <div className="p-6 text-center text-sm text-gray-500">Loading…</div>
         )}
 
-        <div className="relative">
-          {currentUrl ? (
-            currentIsImg ? (
-              <img
-                src={currentUrl}
-                alt={currentRef?.name || 'image'}
-                className="w-full h-[85vh] object-contain select-none"
-                draggable={false}
-              />
-            ) : currentIsPdf2 ? (
-              isIOS ? (
-                // iOS: <object> keeps proportions; user can pinch/scroll
-                <object
-                  data={currentUrl}
-                  type="application/pdf"
-                  className="w-full h-[85vh] bg-black/5"
-                  style={{ objectFit: 'contain', touchAction: 'pan-y pinch-zoom' }}
-                />
-              ) : (
-                // non-iOS: iframe with page-fit hint, proportional
-                <iframe
-                  key={currentRef?.id || currentUrl}
-                  src={`${currentUrl}#zoom=page-fit`}
-                  title="Preview"
-                  className="w-full h-[85vh] bg-black/5"
-                />
-              )
-            ) : (
-              <div className="p-6 text-center text-sm text-gray-500">No inline preview available.</div>
-            )
-          ) : (
-            <div className="p-6 text-center text-sm text-gray-500">Loading…</div>
-          )}
-
-          {/* NOTE: intentionally no "Open in new tab" link */}
-          {canGallery && photos.length > 1 && (
-            <>
-              <button className="absolute left-2 top-1/2 -translate-y-1/2 bg-white/80 hover:bg-white rounded-full w-8 h-8 flex items-center justify-center"
-                onClick={goLeft} aria-label="Previous photo">‹</button>
-              <button className="absolute right-2 top-1/2 -translate-y-1/2 bg-white/80 hover:bg-white rounded-full w-8 h-8 flex items-center justify-center"
-                onClick={goRight} aria-label="Next photo">›</button>
-            </>
-          )}
-        </div>
+        {/* Nav arrows (images or pdf pages) */}
+        {((isImg && photos.length > 1) || (isPdf && (pdfPages ? pdfPages > 1 : true))) && (
+          <>
+            <button
+              className="absolute left-2 top-1/2 -translate-y-1/2 bg-white/80 hover:bg-white rounded-full w-8 h-8 flex items-center justify-center"
+              onClick={() => {
+                if (isImg && photos.length > 1) setIdx(i => (i - 1 + photos.length) % photos.length);
+                else if (isPdf) setPdfPage(p => Math.max(1, p - 1));
+              }}
+              aria-label="Previous"
+            >‹</button>
+            <button
+              className="absolute right-2 top-1/2 -translate-y-1/2 bg-white/80 hover:bg-white rounded-full w-8 h-8 flex items-center justify-center"
+              onClick={() => {
+                if (isImg && photos.length > 1) setIdx(i => (i + 1) % photos.length);
+                else if (isPdf) setPdfPage(p => (pdfPages ? Math.min(pdfPages, p + 1) : p + 1));
+              }}
+              aria-label="Next"
+            >›</button>
+          </>
+        )}
       </div>
-    </div>
-  );
-}
-
-function PillMenu({ label, options, onPick, strong }){
-  const [open, setOpen] = useState(false);
-  const [alignRight, setAlignRight] = useState(false);
-  const wrapRef = useRef(null);
-  useEffect(()=>{ if(!open) return; const onDoc=(ev)=>{ if(wrapRef.current && !wrapRef.current.contains(ev.target)) setOpen(false); }; document.addEventListener('click', onDoc); return ()=> document.removeEventListener('click', onDoc); },[open]);
-  const toggle=(e)=>{ e.stopPropagation(); const MENU_W=176; if (wrapRef.current){ const r=wrapRef.current.getBoundingClientRect(); setAlignRight(r.left + MENU_W > window.innerWidth);} setOpen(o=>!o); };
-  const choose=(s)=>{ onPick(s); setOpen(false); };
-  return (
-    <div ref={wrapRef} className="relative inline-block">
-      <button type="button" aria-expanded={open} className={`px-3 py-1 rounded-full text-sm font-medium border ${strong?'':'bg-white'}`} onClick={toggle}>
-        <span className="inline-block w-4 h-3 align-middle mr-1">
-          <span className="block w-4 h-0.5 bg-gray-400 rounded mb-0.5"></span>
-          <span className="block w-4 h-0.5 bg-gray-400 rounded mb-0.5"></span>
-          <span className="block w-4 h-0.5 bg-gray-400 rounded"></span>
-        </span>
-        {label || 'Select'}
-      </button>
-      {open && (
-        <div className={`absolute z-50 mt-1 w-44 rounded border bg-white shadow ${alignRight ? 'right-0' : 'left-0'}`}>
-          {(options||[]).map((s)=> (
-            <button key={s} type="button" className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm" onClick={(e)=>{ e.stopPropagation(); choose(s); }}>{s}</button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function AddDropdown({ disabled=false }){
-  const [open,setOpen] = useState(false);
-  const [alignRight, setAlignRight] = useState(false);
-  const wrapRef = useRef(null);
-
-  useEffect(()=>{ 
-    if(!open) return; 
-    const onDoc = (e)=>{ if(wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false); }; 
-    document.addEventListener('click', onDoc); 
-    return ()=> document.removeEventListener('click', onDoc); 
-  },[open]);
-
-  const toggle = ()=>{ 
-    if(disabled) return; 
-    const MENU_W=176; 
-    if(wrapRef.current){ 
-      const r=wrapRef.current.getBoundingClientRect(); 
-      setAlignRight(r.left + MENU_W > window.innerWidth);
-    } 
-    setOpen(o=>!o); 
-  };
-
-  const triggerFiles = ()=>{ 
-    if(disabled) { alert("Add a profile first."); return; } 
-    window.dispatchEvent(new Event('open-quick-add')); 
-    setOpen(false); 
-  };
-
-  const triggerPaste = ()=>{ 
-    if(disabled) { alert("Add a profile first."); return; } 
-    window.dispatchEvent(new Event('open-paste-add')); 
-    setOpen(false); 
-  };
-
-  return (
-    <div ref={wrapRef} className="relative inline-block">
-      <button
-        type="button"
-        aria-label="Add"
-        title="Add"
-        className={`px-2 py-1 rounded border flex items-center gap-1 ${disabled ? 'opacity-40' : ''}`}
-        onClick={toggle}
-      >
-        <IconPlus/>
-      </button>
-
-      {open && (
-        <div className={`absolute z-50 mt-1 w-44 rounded border bg-white shadow ${alignRight ? 'right-0' : 'left-0'}`}>
-          <button
-            type="button"
-            className="w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center gap-2"
-            onClick={triggerFiles}
-          >
-            <IconDownload/><span>From files</span>
-          </button>
-          <button
-            type="button"
-            className="w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center gap-2"
-            onClick={triggerPaste}
-          >
-            <span className="text-lg leading-none">📋</span><span>Paste</span>
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function SettingsFab({ onExport, onImport, onOpenSync }) {
-  const [open, setOpen] = useState(false);
-  const wrap = useRef(null);
-  useEffect(()=>{ if(!open) return; const onDoc=(e)=>{ if(wrap.current && !wrap.current.contains(e.target)) setOpen(false); }; document.addEventListener('click', onDoc); return ()=> document.removeEventListener('click', onDoc); },[open]);
-  return (
-    <div ref={wrap} className="fixed bottom-4 right-4 z-50 flex flex-col items-end">
-      {open && (
-        <div className="mb-2 w-48 rounded border bg-white shadow">
-          <button type="button" className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm" onClick={() => { onExport(); setOpen(false); }}>Export</button>
-          <button type="button" className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm" onClick={() => { onImport(); setOpen(false); }}>Import</button>
-          <div className="my-1 border-t" />
-          <button type="button" className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm" onClick={() => { onOpenSync?.(); setOpen(false); }}>Sync settings…</button>
-        </div>
-      )}
-      <button type="button" aria-label="Settings" className="w-11 h-11 rounded-full border border-gray-200 bg-white shadow-sm flex items-center justify-center" onClick={() => setOpen(o => !o)}>
-        <IconGear />
-      </button>
     </div>
   );
 }
