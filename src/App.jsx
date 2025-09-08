@@ -315,7 +315,93 @@ function loadPdfjs() {
   return __pdfjsPromise;
 }
 
-// ===== Viewer (images + PDF pages, proportional, swipe) =====
+// --- Helper: pinch-zoom + pan wrapper ---------------------------------------
+function Zoomer({ children, onLockChange }) {
+  const wrapRef = React.useRef(null);
+  const [st, setSt] = React.useState({ scale: 1, panX: 0, panY: 0, pinch: false });
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const MIN = 1, MAX = 4;
+  const ref = React.useRef({}); // gesture scratchpad
+
+  // Tell parent when zoom/pinch is active (to disable swipe nav/dismiss)
+  React.useEffect(() => {
+    onLockChange?.(st.scale > 1 || st.pinch);
+  }, [st.scale, st.pinch, onLockChange]);
+
+  const onStart = (e) => {
+    if (e.touches.length === 2) {
+      const [a, b] = e.touches;
+      const dx = a.clientX - b.clientX, dy = a.clientY - b.clientY;
+      ref.current.startDist = Math.hypot(dx, dy);
+      ref.current.startScale = st.scale;
+      setSt(s => ({ ...s, pinch: true }));
+      e.preventDefault();
+    } else if (e.touches.length === 1 && st.scale > 1) {
+      ref.current.last = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      e.preventDefault();
+    }
+  };
+
+  const onMove = (e) => {
+    if (e.touches.length === 2 && ref.current.startDist) {
+      const [a, b] = e.touches;
+      const dx = a.clientX - b.clientX, dy = a.clientY - b.clientY;
+      const dist = Math.hypot(dx, dy);
+      let scale = clamp(ref.current.startScale * (dist / ref.current.startDist), MIN, MAX);
+      setSt(s => ({ ...s, scale }));
+      e.preventDefault();
+    } else if (e.touches.length === 1 && st.scale > 1 && ref.current.last) {
+      const t = e.touches[0];
+      const dx = t.clientX - ref.current.last.x;
+      const dy = t.clientY - ref.current.last.y;
+      ref.current.last = { x: t.clientX, y: t.clientY };
+
+      setSt(s => {
+        const el = wrapRef.current;
+        if (!el) return { ...s, panX: s.panX + dx, panY: s.panY + dy };
+        const rect = el.getBoundingClientRect();
+        const maxX = (rect.width  * (s.scale - 1)) / 2 + 40; // soft bounds
+        const maxY = (rect.height * (s.scale - 1)) / 2 + 40;
+        return {
+          ...s,
+          panX: clamp(s.panX + dx, -maxX, maxX),
+          panY: clamp(s.panY + dy, -maxY, maxY),
+        };
+      });
+      e.preventDefault();
+    }
+  };
+
+  const onEnd = () => {
+    // finish pinch; snap back if scale ~1
+    setSt(s => (s.scale <= 1.01 ? { scale: 1, panX: 0, panY: 0, pinch: false } : { ...s, pinch: false }));
+  };
+
+  return (
+    <div
+      ref={wrapRef}
+      className="w-full h-[90vh] overflow-hidden"
+      style={{ touchAction: 'none' }}                 // allow custom gestures
+      onTouchStart={onStart}
+      onTouchMove={onMove}
+      onTouchEnd={onEnd}
+      onTouchCancel={onEnd}
+    >
+      <div
+        className="w-full h-full flex items-center justify-center"
+        style={{
+          transform: `translate3d(${st.panX}px, ${st.panY}px, 0) scale(${st.scale})`,
+          transformOrigin: 'center center',
+          transition: st.pinch ? 'none' : 'transform 90ms ease-out',
+        }}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
+// ===== Viewer (images + PDF pages, proportional, swipe + pinch-zoom) =====
 function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }) {
   const firstUrl = useFilePreview(fileRef);
   const isImg = (fileRef?.type || '').startsWith('image/');
@@ -323,93 +409,81 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
                 (fileRef?.name || '').toLowerCase().endsWith('.pdf');
 
   // image carousel index
-  const [idx, setIdx] = useState(startIndex);
-  useEffect(() => setIdx(startIndex), [startIndex, fileRef?.id]);
+  const [idx, setIdx] = React.useState(startIndex);
+  React.useEffect(() => setIdx(startIndex), [startIndex, fileRef?.id]);
 
   // PDF state
-  const [pdfPage, setPdfPage] = useState(1);
-  const [pdfPages, setPdfPages] = useState(null);
-  const [pdfImg, setPdfImg] = useState('');     // rendered page (data URL)
-  const [pdfFallback, setPdfFallback] = useState(false);
-  const [pdfLoading, setPdfLoading] = useState(false);
-  useEffect(() => { setPdfPage(1); setPdfPages(null); setPdfImg(''); setPdfFallback(false); setPdfLoading(false); }, [fileRef?.id]);
+  const [pdfPage, setPdfPage] = React.useState(1);
+  const [pdfPages, setPdfPages] = React.useState(null);
+  const [pdfImg, setPdfImg] = React.useState('');
+  const [pdfFallback, setPdfFallback] = React.useState(false);
+  const [pdfLoading, setPdfLoading] = React.useState(false);
+  React.useEffect(() => { setPdfPage(1); setPdfPages(null); setPdfImg(''); setPdfFallback(false); setPdfLoading(false); }, [fileRef?.id]);
 
-  // Render current PDF page to an image (UMD pdf.js through loadPdfjs, proportional)
-useEffect(() => {
-  let cancelled = false;
-  (async () => {
-    if (!isPdf || !fileRef?.id) return;
-    setPdfLoading(true);
-    setPdfImg('');
-
-    try {
-      // get raw bytes
-      const blob = await dbFiles.getItem(fileRef.id);
-      if (!blob) throw new Error('no-blob');
-      const ab = await blob.arrayBuffer();
-
-      // use the UMD loader you added above Viewer
-      const pdfjs = await loadPdfjs();
-      // workerSrc already set by the loader; keep workers on for speed
-      pdfjs.disableWorker = false;
-
-      // open document
-      const doc = await pdfjs.getDocument({ data: ab }).promise;
-      if (cancelled) { doc.destroy?.(); return; }
-      setPdfPages(doc.numPages || null);
-
-      // clamp page number and get page
-      const pageNum = Math.max(1, Math.min(pdfPage, doc.numPages || pdfPage));
-      const page = await doc.getPage(pageNum);
-
-      // render proportionally to an offscreen canvas (fits with object-contain)
-      const v1 = page.getViewport({ scale: 1 });
-      const targetH = 1400;                      // baseline CSS pixels
-      const dpr = Math.max(1, window.devicePixelRatio || 1);
-      const scale = Math.max(0.75, Math.min(2.5, targetH / v1.height)) * dpr;
-      const viewport = page.getViewport({ scale });
-
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d', { alpha: false });
-      canvas.width = Math.floor(viewport.width);
-      canvas.height = Math.floor(viewport.height);
-
-      await page.render({ canvasContext: ctx, viewport }).promise;
-      if (cancelled) { doc.cleanup?.(); doc.destroy?.(); return; }
-
-      setPdfImg(canvas.toDataURL('image/png'));
-      setPdfFallback(false);
-      setPdfLoading(false);
-
-      doc.cleanup?.();
-      doc.destroy?.();
-    } catch {
-      if (!cancelled) {
-        // graceful iframe fallback (still page-fit)
-        setPdfFallback(true);
+  // Render current PDF page to an image (your existing approach)
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!isPdf || !fileRef?.id) return;
+      setPdfLoading(true); setPdfImg('');
+      const watchdog = new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 2500));
+      try {
+        const blob = await dbFiles.getItem(fileRef.id);
+        if (!blob) throw new Error('no-blob');
+        const ab = await blob.arrayBuffer();
+        const mod = await Promise.race([
+          import('https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/legacy/build/pdf.min.mjs'),
+          watchdog
+        ]).catch(() => null);
+        if (!mod) throw new Error('import-failed');
+        const pdfjs = mod.default || mod;
+        if ('disableWorker' in pdfjs) pdfjs.disableWorker = true;
+        if (pdfjs.GlobalWorkerOptions) pdfjs.GlobalWorkerOptions.workerSrc = undefined;
+        const doc = await pdfjs.getDocument({ data: ab }).promise;
+        if (cancelled) { doc.destroy?.(); return; }
+        setPdfPages(doc.numPages || null);
+        const pageNum = Math.max(1, Math.min(pdfPage, doc.numPages || pdfPage));
+        const page = await doc.getPage(pageNum);
+        const v1 = page.getViewport({ scale: 1 });
+        const targetH = 1400;
+        const dpr = Math.max(1, window.devicePixelRatio || 1);
+        const scale = Math.max(0.75, Math.min(2.5, targetH / v1.height)) * dpr;
+        const viewport = page.getViewport({ scale });
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d', { alpha: false });
+        canvas.width = Math.floor(viewport.width);
+        canvas.height = Math.floor(viewport.height);
+        await page.render({ canvasContext: ctx, viewport }).promise;
+        if (cancelled) { doc.destroy?.(); return; }
+        setPdfImg(canvas.toDataURL('image/png'));
+        setPdfFallback(false);
         setPdfLoading(false);
+        doc.destroy?.();
+      } catch {
+        if (!cancelled) { setPdfFallback(true); setPdfLoading(false); }
       }
-    }
-  })();
-  return () => { cancelled = true; };
-}, [isPdf, fileRef?.id, pdfPage]);
+    })();
+    return () => { cancelled = true; };
+  }, [isPdf, fileRef?.id, pdfPage]);
 
-  // Gestures: left/right to change, down to close
+  // Swipe gestures (disabled while zooming/panning)
+  const [zoomLocked, setZoomLocked] = React.useState(false);
   const HORIZ = 60, VERT = 80, ANGLE = 15;
-  const [drag, setDrag] = useState({ active:false, startX:0, startY:0, dx:0, dy:0 });
+  const [drag, setDrag] = React.useState({ active:false, startX:0, startY:0, dx:0, dy:0 });
 
   const onTouchStart = (e) => {
+    if (zoomLocked) return; // Zoomer handles it
     if (e.touches.length !== 1) return;
     const t = e.touches[0];
     setDrag({ active:true, startX:t.clientX, startY:t.clientY, dx:0, dy:0 });
   };
   const onTouchMove = (e) => {
-    if (!drag.active || e.touches.length !== 1) return;
+    if (zoomLocked || !drag.active || e.touches.length !== 1) return;
     const t = e.touches[0];
     setDrag(d => ({ ...d, dx: t.clientX - d.startX, dy: t.clientY - d.startY }));
   };
   const onTouchEnd = () => {
-    if (!drag.active) return;
+    if (zoomLocked || !drag.active) return;
     const { dx, dy } = drag;
     const ax = Math.abs(dx), ay = Math.abs(dy);
 
@@ -432,9 +506,10 @@ useEffect(() => {
   };
 
   // Keyboard helpers
-  useEffect(() => {
+  React.useEffect(() => {
     const onKey = (e) => {
       if (e.key === 'Escape') onClose?.();
+      if (zoomLocked) return;
       if (e.key === 'ArrowLeft') {
         if (isImg && photos.length > 1) setIdx(i => (i - 1 + photos.length) % photos.length);
         else if (isPdf) setPdfPage(p => Math.max(1, p - 1));
@@ -446,7 +521,7 @@ useEffect(() => {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [isImg, isPdf, photos.length, pdfPages, onClose]);
+  }, [zoomLocked, isImg, isPdf, photos.length, pdfPages, onClose]);
 
   // current photo url
   const currentPhotoRef = isImg && photos.length ? photos[idx] : null;
@@ -466,48 +541,49 @@ useEffect(() => {
         onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}
         style={{
-          transform: drag.active && drag.dy > 0 ? `translateY(${Math.max(0, drag.dy)}px)` : undefined,
+          transform: drag.active && drag.dy > 0 && !zoomLocked ? `translateY(${Math.max(0, drag.dy)}px)` : undefined,
           transition: drag.active ? 'none' : 'transform 160ms ease-out',
-          touchAction: 'none'
         }}
       >
-        {/* CONTENT */}
-        {isImg ? (
-          currentPhotoUrl ? (
-            <img
-              src={currentPhotoUrl}
-              alt={(currentPhotoRef?.name) || 'image'}
-              className="w-full h-[90vh] object-contain select-none"
-              draggable={false}
-            />
+        {/* CONTENT wrapped in Zoomer (enables pinch zoom + pan) */}
+        <Zoomer onLockChange={setZoomLocked}>
+          {isImg ? (
+            currentPhotoUrl ? (
+              <img
+                src={currentPhotoUrl}
+                alt={(currentPhotoRef?.name) || 'image'}
+                className="w-full h-[90vh] object-contain select-none"
+                draggable={false}
+              />
+            ) : (
+              <div className="p-6 text-center text-sm text-gray-500">Loading…</div>
+            )
+          ) : isPdf ? (
+            pdfImg ? (
+              <img
+                src={pdfImg}
+                alt={`Page ${pdfPage}`}
+                className="w-full h-[90vh] object-contain select-none"
+                draggable={false}
+              />
+            ) : pdfFallback && firstUrl ? (
+              <iframe
+                key={`${firstUrl}#${pdfPage}`}
+                src={`${firstUrl}#page=${pdfPage}&view=FitH&zoom=page-fit&toolbar=0&navpanes=0`}
+                title="PDF"
+                className="w-full h-[90vh] pointer-events-none"
+              />
+            ) : pdfLoading ? (
+              <div className="p-6 text-center text-sm text-gray-500">Loading…</div>
+            ) : (
+              <div className="p-6 text-center text-sm text-gray-500">Unable to render PDF.</div>
+            )
           ) : (
-            <div className="p-6 text-center text-sm text-gray-500">Loading…</div>
-          )
-        ) : isPdf ? (
-          pdfImg ? (
-            <img
-              src={pdfImg}
-              alt={`Page ${pdfPage}`}
-              className="w-full h-[90vh] object-contain select-none"
-              draggable={false}
-            />
-          ) : pdfFallback && firstUrl ? (
-            <iframe
-              key={`${firstUrl}#${pdfPage}`}
-              src={`${firstUrl}#page=${pdfPage}&view=FitH&zoom=page-fit&toolbar=0&navpanes=0`}
-              title="PDF"
-              className="w-full h-[90vh] pointer-events-none"
-            />
-          ) : pdfLoading ? (
-            <div className="p-6 text-center text-sm text-gray-500">Loading…</div>
-          ) : (
-            <div className="p-6 text-center text-sm text-gray-500">Unable to render PDF.</div>
-          )
-        ) : (
-          <div className="p-6 text-center text-sm text-gray-500">No preview available.</div>
-        )}
+            <div className="p-6 text-center text-sm text-gray-500">No preview available.</div>
+          )}
+        </Zoomer>
 
-        {/* Optional delete (photos only). If you don’t want it, don’t pass onDeletePhoto */}
+        {/* Optional delete (photos only) */}
         {isImg && typeof onDeletePhoto === 'function' && photos.length > 0 && (
           <button
             className="absolute top-3 right-3 bg-white/90 hover:bg-white rounded-full w-9 h-9 flex items-center justify-center border"
