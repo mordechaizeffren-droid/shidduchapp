@@ -289,7 +289,31 @@ function MiniPreview({ fileRef }) {
     </div>
   );
 }
+// --- pdf.js (UMD) one-time loader ---
+let __pdfjsPromise = null;
+function loadPdfjs() {
+  if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+  if (__pdfjsPromise) return __pdfjsPromise;
 
+  __pdfjsPromise = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js';
+    s.async = true;
+    s.onload = () => {
+      const lib = window.pdfjsLib;
+      if (!lib) { reject(new Error('pdfjsLib missing')); return; }
+      try {
+        lib.GlobalWorkerOptions.workerSrc =
+          'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+      } catch {}
+      resolve(lib);
+    };
+    s.onerror = () => reject(new Error('Failed to load pdf.js'));
+    document.head.appendChild(s);
+  });
+
+  return __pdfjsPromise;
+}
 
 // ===== Viewer (images + PDF pages, proportional, swipe) =====
 function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }) {
@@ -310,69 +334,65 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
   const [pdfLoading, setPdfLoading] = useState(false);
   useEffect(() => { setPdfPage(1); setPdfPages(null); setPdfImg(''); setPdfFallback(false); setPdfLoading(false); }, [fileRef?.id]);
 
-  // Render current PDF page to an image (reliable on iOS, preserves aspect)
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      if (!isPdf || !fileRef?.id) return;
-      setPdfLoading(true);
-      setPdfImg('');
+  // Render current PDF page to an image (UMD pdf.js through loadPdfjs, proportional)
+useEffect(() => {
+  let cancelled = false;
+  (async () => {
+    if (!isPdf || !fileRef?.id) return;
+    setPdfLoading(true);
+    setPdfImg('');
 
-      // small watchdog so we never “hang” on loading
-      const watchdog = new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 2500));
+    try {
+      // get raw bytes
+      const blob = await dbFiles.getItem(fileRef.id);
+      if (!blob) throw new Error('no-blob');
+      const ab = await blob.arrayBuffer();
 
-      try {
-        const blob = await dbFiles.getItem(fileRef.id);
-        if (!blob) throw new Error('no-blob');
-        const ab = await blob.arrayBuffer();
+      // use the UMD loader you added above Viewer
+      const pdfjs = await loadPdfjs();
+      // workerSrc already set by the loader; keep workers on for speed
+      pdfjs.disableWorker = false;
 
-        // Load legacy ESM build and *disable workers* (safer on iOS/CDN)
-        const mod = await Promise.race([
-          import('https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/legacy/build/pdf.min.mjs'),
-          watchdog
-        ]).catch(() => null);
+      // open document
+      const doc = await pdfjs.getDocument({ data: ab }).promise;
+      if (cancelled) { doc.destroy?.(); return; }
+      setPdfPages(doc.numPages || null);
 
-        if (!mod) throw new Error('import-failed');
+      // clamp page number and get page
+      const pageNum = Math.max(1, Math.min(pdfPage, doc.numPages || pdfPage));
+      const page = await doc.getPage(pageNum);
 
-        const pdfjs = mod.default || mod;
-        if ('disableWorker' in pdfjs) pdfjs.disableWorker = true;
-        if (pdfjs.GlobalWorkerOptions) pdfjs.GlobalWorkerOptions.workerSrc = undefined;
+      // render proportionally to an offscreen canvas (fits with object-contain)
+      const v1 = page.getViewport({ scale: 1 });
+      const targetH = 1400;                      // baseline CSS pixels
+      const dpr = Math.max(1, window.devicePixelRatio || 1);
+      const scale = Math.max(0.75, Math.min(2.5, targetH / v1.height)) * dpr;
+      const viewport = page.getViewport({ scale });
 
-        const doc = await pdfjs.getDocument({ data: ab }).promise;
-        if (cancelled) { doc.destroy?.(); return; }
-        setPdfPages(doc.numPages || null);
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d', { alpha: false });
+      canvas.width = Math.floor(viewport.width);
+      canvas.height = Math.floor(viewport.height);
 
-        const pageNum = Math.max(1, Math.min(pdfPage, doc.numPages || pdfPage));
-        const page = await doc.getPage(pageNum);
+      await page.render({ canvasContext: ctx, viewport }).promise;
+      if (cancelled) { doc.cleanup?.(); doc.destroy?.(); return; }
 
-        // scale respecting DPR for crispness, preserve proportions (object-contain later)
-        const v1 = page.getViewport({ scale: 1 });
-        const targetH = 1400;                      // CSS px baseline
-        const dpr = Math.max(1, window.devicePixelRatio || 1);
-        const scale = Math.max(0.75, Math.min(2.5, (targetH / v1.height))) * dpr;
-        const viewport = page.getViewport({ scale });
+      setPdfImg(canvas.toDataURL('image/png'));
+      setPdfFallback(false);
+      setPdfLoading(false);
 
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d', { alpha: false });
-        canvas.width = Math.floor(viewport.width);
-        canvas.height = Math.floor(viewport.height);
-
-        await page.render({ canvasContext: ctx, viewport }).promise;
-        if (cancelled) { doc.destroy?.(); return; }
-
-        setPdfImg(canvas.toDataURL('image/png'));
-        setPdfFallback(false);
+      doc.cleanup?.();
+      doc.destroy?.();
+    } catch {
+      if (!cancelled) {
+        // graceful iframe fallback (still page-fit)
+        setPdfFallback(true);
         setPdfLoading(false);
-        doc.destroy?.();
-      } catch {
-        if (!cancelled) {
-          setPdfFallback(true);  // graceful iframe fallback (still page-fit)
-          setPdfLoading(false);
-        }
       }
-    })();
-    return () => { cancelled = true; };
-  }, [isPdf, fileRef?.id, pdfPage]);
+    }
+  })();
+  return () => { cancelled = true; };
+}, [isPdf, fileRef?.id, pdfPage]);
 
   // Gestures: left/right to change, down to close
   const HORIZ = 60, VERT = 80, ANGLE = 15;
