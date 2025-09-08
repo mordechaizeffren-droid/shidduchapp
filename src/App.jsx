@@ -1465,6 +1465,15 @@ export default function App(){
   // per-device unseen map { [prospectId]: seenTimestamp }
   const [unseenMap, setUnseenMap] = useState({});
   const saveSeenMap = async (map) => { setUnseenMap(map); try { await dbProfile.setItem('seenProspects', map); } catch {} };
+// Load saved Sync settings on boot (so the panel remembers token/room)
+useEffect(() => {
+  (async () => {
+    try {
+      const saved = await dbProfile.getItem('sync');
+      if (saved && (saved.config || saved.room)) setSync(saved);
+    } catch {}
+  })();
+}, []);
 
   // Load + migrate
   useEffect(()=>{(async()=>{
