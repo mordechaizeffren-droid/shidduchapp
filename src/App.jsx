@@ -699,33 +699,54 @@ function SyncPanel({ open, initial, onSave, onClear, onClose }) {
     </div>
   );
 }
-// REPLACE the entire Prospects component with this:
-function Prospects({ prospects, setProspects, profile, saveProfile, activeProfileId, setActiveProfileId, unseenMap, markSeen }){
-  const profiles=ensureArray(profile?.profiles);
-  const safe=ensureArray(prospects);
-  const [q,setQ]=useState('');
-  const [statusFilter,setStatusFilter]=useState('');
-  const [expanded,setExpanded]=useState({});
-  const [pasteOn,setPasteOn]=useState(false);
-  const pasteRef = useRef(null);
-const [viewerFile, setViewerFile] = useState(null);
-const [viewerPhotos, setViewerPhotos] = useState([]);
-const [viewerIndex, setViewerIndex] = useState(0);
-const [viewerProspectId, setViewerProspectId] = useState('');
+// ===== Prospects (collapsed list + full-page editor) =====
+function Prospects({
+  prospects,
+  setProspects,
+  profile,
+  saveProfile,
+  activeProfileId,
+  setActiveProfileId,
+  unseenMap,
+  markSeen
+}) {
+  const profiles = ensureArray(profile?.profiles);
+  const safe = ensureArray(prospects);
+
+  // --- list search/filters/quick add (unchanged) ---
+  const [q, setQ] = React.useState('');
+  const [statusFilter, setStatusFilter] = React.useState('');
+  const [pasteOn, setPasteOn] = React.useState(false);
+  const pasteRef = React.useRef(null);
+  const quickRef = React.useRef(null);
   const { ask: askConfirm, Confirm } = useConfirm();
 
-  // first-use tip (once)
-  const [showTip, setShowTip] = useState(false);
-  useEffect(()=>{
-    const ok = localStorage.getItem("tip-expand-shown");
-    if (!ok && safe.length > 0 && !Object.values(expanded).some(Boolean)) {
-      setShowTip(true);
-      const t = setTimeout(()=> setShowTip(false), 9000);
-      return ()=> clearTimeout(t);
-    }
-  }, [safe.length]);
+  // viewer (kept, used by full editor too if you want)
+  const [viewerFile, setViewerFile] = React.useState(null);
+  const [viewerPhotos, setViewerPhotos] = React.useState([]);
+  const [viewerIndex, setViewerIndex] = React.useState(0);
+  const [viewerProspectId, setViewerProspectId] = React.useState('');
 
-  // Clipboard API path (paste image/pdf)
+  // NEW: full-screen editor state
+  const [fullOpen, setFullOpen] = React.useState(false);
+  const [fullId, setFullId] = React.useState('');
+  const openFull = (id) => { setFullId(id); setFullOpen(true); };
+  const closeFull = () => setFullOpen(false);
+  const fullItem = fullOpen ? safe.find(x => x.id === fullId) || null : null;
+
+  // ---- helpers (unchanged) ----
+  const quickAddFromPickedFile = async (f) => {
+    if (!profiles.length) { alert('Add a profile first'); return; }
+    const ref = await attachFile(f); if (!ref) return;
+    const base = (f.name||'').replace(/\.[^.]+$/,'').replace(/[_-]+/g,' ').trim();
+    const pid = activeProfileId || profiles[0].id;
+    const p = { id: uid(), profileId: pid, fullName: base || '', status:'New', sourceName:'', sourceTrust:'', city:'', notes:'', photos:[], resume:null, updatedAt: Date.now() };
+    if ((f.type||'').startsWith('image/')) p.photos = [ref]; else p.resume = ref;
+    setProspects([...safe, p]);
+  };
+
+  React.useEffect(()=>{ const h=()=>quickRef.current?.click(); window.addEventListener('open-quick-add', h); return ()=>window.removeEventListener('open-quick-add', h); },[]);
+
   const tryClipboardApi = async () => {
     try {
       if (navigator.clipboard && navigator.clipboard.read) {
@@ -745,7 +766,7 @@ const [viewerProspectId, setViewerProspectId] = useState('');
     return false;
   };
   const beginPasteFlow = async () => { const ok = await tryClipboardApi(); if (!ok) { setPasteOn(true); setTimeout(()=>pasteRef.current?.focus(), 50); } };
-  useEffect(()=>{ const h=()=>beginPasteFlow(); window.addEventListener('open-paste-add', h); return ()=>window.removeEventListener('open-paste-add', h); },[profiles,activeProfileId,prospects]);
+  React.useEffect(()=>{ const h=()=>beginPasteFlow(); window.addEventListener('open-paste-add', h); return ()=>window.removeEventListener('open-paste-add', h); },[profiles,activeProfileId,prospects]);
   const handlePaste = async (e) => {
     const items = e.clipboardData?.items || []; let file=null;
     for (const it of items) { if (it.kind === 'file' && (it.type.startsWith('image/') || it.type === 'application/pdf')) { file = it.getAsFile(); break; } }
@@ -753,33 +774,18 @@ const [viewerProspectId, setViewerProspectId] = useState('');
     setPasteOn(false); e.preventDefault();
   };
 
-  // Quick Add from file picker
-  const quickRef = useRef(null);
-  const quickAddFromPickedFile = async (f) => {
-    if (!profiles.length) { alert('Add a profile first'); return; }
-    const ref = await attachFile(f); if (!ref) return;
-    const base = (f.name||'').replace(/\.[^.]+$/,'').replace(/[_-]+/g,' ').trim();
-    const name = base || '';
-    const pid = activeProfileId || profiles[0].id;
-    const p = { id: uid(), profileId: pid, fullName: name, status:'New', sourceName:'', sourceTrust:'', city:'', notes:'', photos:[], resume:null, updatedAt: Date.now() };
-    if ((f.type||'').startsWith('image/')) p.photos = [ref]; else p.resume = ref;
-    setProspects([...safe, p]);
-    if (!localStorage.getItem("tip-expand-shown")) setShowTip(true);
+  const addProfile = () => {
+    const k = { id: uid(), name:'', photos:[], resume:null, blurb:'', updatedAt: Date.now() };
+    saveProfile({ ...(profile||{}), profiles:[...profiles, k], updatedAt: Date.now() });
+    setActiveProfileId(k.id);
   };
-  useEffect(()=>{ const h=()=>quickRef.current?.click(); window.addEventListener('open-quick-add', h); return ()=>window.removeEventListener('open-quick-add', h); },[]);
-
-  const toggleOpen=(id)=>{
-    setExpanded(s=>({ ...s, [id]: !s[id] }));
-    if (!expanded[id]) {
-      const p = safe.find(x=>x.id===id);
-      if (p) markSeen(p.id, p.updatedAt || Date.now());
-      if (showTip) { localStorage.setItem('tip-expand-shown','1'); setShowTip(false); }
-    }
+  const addProspect = () => {
+    if(!profiles.length){ alert('Add a profile first'); return; }
+    const p={ id:uid(), profileId:activeProfileId||profiles[0].id, fullName:'', status:'New', sourceName:'', sourceTrust:'', city:'', notes:'', photos:[], resume:null, updatedAt:Date.now() };
+    setProspects([...safe,p]);
   };
-  const addProfile=()=>{ const k={id:uid(), name:'', photos:[], resume:null, blurb:'', updatedAt:Date.now()}; saveProfile({ ...(profile||{}), profiles:[...profiles, k], updatedAt:Date.now() }); setActiveProfileId(k.id); };
-  const addProspect=()=>{ if(!profiles.length){ alert('Add a profile first'); return; } const p={ id:uid(), profileId:activeProfileId||profiles[0].id, fullName:'', status:'New', sourceName:'', sourceTrust:'', city:'', notes:'', photos:[], resume:null, updatedAt:Date.now() }; setProspects([...safe,p]); };
-  const updateP=(id,patch)=> setProspects(safe.map(x=> x.id===id?{...x,...patch, updatedAt:Date.now()}:x));
-  const removeP=async(id)=>{
+  const updateP = (id, patch) => setProspects(safe.map(x => x.id===id ? { ...x, ...patch, updatedAt: Date.now() } : x));
+  const removeP = async (id) => {
     const ok = await askConfirm(); if (!ok) return;
     const p = safe.find(x=>x.id===id);
     try {
@@ -788,7 +794,8 @@ const [viewerProspectId, setViewerProspectId] = useState('');
     } catch {}
     setProspects(safe.filter(x=>x.id!==id));
   };
-  const onDropFiles=async(pid, files, into='auto')=>{
+
+  const onDropFiles = async (pid, files, into='auto') => {
     if(!files||!files.length) return;
     for(const f of Array.from(files)){
       const ref=await attachFile(f); if(!ref) continue;
@@ -804,7 +811,13 @@ const [viewerProspectId, setViewerProspectId] = useState('');
   const filtered = safe
     .filter(p=>!activeProfileId || p.profileId===activeProfileId)
     .filter(p=>!statusFilter || p.status===statusFilter)
-    .filter(p=>{ const t=q.trim().toLowerCase(); if(!t) return true; return ((p.fullName||'').toLowerCase().includes(t) || (p.city||'').toLowerCase().includes(t) || (p.sourceName||'').toLowerCase().includes(t) || (p.notes||'').toLowerCase().includes(t)); });
+    .filter(p=>{
+      const t=q.trim().toLowerCase(); if(!t) return true;
+      return ((p.fullName||'').toLowerCase().includes(t) ||
+              (p.city||'').toLowerCase().includes(t) ||
+              (p.sourceName||'').toLowerCase().includes(t) ||
+              (p.notes||'').toLowerCase().includes(t));
+    });
 
   const hasTwoShareItems = (p) => {
     let count = 0;
@@ -819,7 +832,9 @@ const [viewerProspectId, setViewerProspectId] = useState('');
       {/* profile pills */}
       <div className="flex items-center gap-2 flex-wrap">
         {profiles.map(k=> (
-          <button key={k.id} className={`px-3 py-1 rounded-full border ${activeProfileId===k.id?'bg-black text-white':'bg-white'}`} onClick={()=>setActiveProfileId(k.id)}>
+          <button key={k.id}
+                  className={`px-3 py-1 rounded-full border ${activeProfileId===k.id?'bg-black text-white':'bg-white'}`}
+                  onClick={()=>setActiveProfileId(k.id)}>
             {k.name ? k.name : <span className="text-gray-400">name...</span>}
           </button>
         ))}
@@ -828,50 +843,37 @@ const [viewerProspectId, setViewerProspectId] = useState('');
 
       {/* search + filter + Add */}
       <div className="flex items-center gap-2">
-        <input className="border rounded px-2 py-1 text-sm flex-1 select-text" placeholder="Search name, city, notes..." value={q} onChange={e=>setQ(e.target.value)} />
-        {pasteOn && (<input ref={pasteRef} onPaste={handlePaste} className="border rounded px-2 py-1 text-sm select-text" placeholder="Paste here…" aria-label="Paste here" />)}
-        <PillMenu label={statusFilter||'All'} options={['All',...STATUS]} onPick={(s)=>setStatusFilter(s==='All'?'':s)} />
-        <input ref={quickRef} type="file" accept="*/*" multiple className="hidden" onChange={e=>{
-          const fileList = e.target.files; if(fileList?.length){ for(const f of Array.from(fileList)) quickAddFromPickedFile(f); }
-          e.target.value=''; }} />
+        <input className="border rounded px-2 py-1 text-sm flex-1 select-text"
+               placeholder="Search name, city, notes..."
+               value={q} onChange={e=>setQ(e.target.value)} />
+        {pasteOn && (<input ref={pasteRef} onPaste={handlePaste}
+                            className="border rounded px-2 py-1 text-sm select-text"
+                            placeholder="Paste here…" aria-label="Paste here" />)}
+        <PillMenu label={statusFilter||'All'} options={['All',...STATUS]}
+                  onPick={(s)=>setStatusFilter(s==='All'?'':s)} />
+        <input ref={quickRef} type="file" accept="*/*" multiple className="hidden"
+               onChange={e=>{ const fs=e.target.files; if(fs?.length){ for(const f of Array.from(fs)) quickAddFromPickedFile(f); } e.target.value=''; }} />
         <AddDropdown disabled={!profiles.length} />
       </div>
 
-      {/* tip */}
-      {showTip && (
-        <div className="text-xs text-gray-600 bg-amber-50 border border-amber-200 rounded px-2 py-1 inline-flex items-center gap-2">
-          Tap the tab to expand
-          <button className="text-gray-500" onClick={()=>{ localStorage.setItem('tip-expand-shown','1'); setShowTip(false); }}>×</button>
-        </div>
-      )}
+      {/* cards (collapsed rows) */}
+      <div className="grid grid-cols-1 gap-2 w-full">
+        {filtered.map(p => (
+          <div
+            key={p.id}
+            className="relative border rounded bg-white shadow-sm p-2 overflow-visible cursor-pointer"
+            onClick={()=>{ markSeen(p.id, p.updatedAt || Date.now()); openFull(p.id); }}
+            onDragOver={(e)=>e.preventDefault()}
+          >
+            {/* header line only; tap anywhere to open */}
+            <div className="p-2 flex flex-wrap items-center gap-2">
+              {/* name: NOT editable here; opens full editor */}
+              <button className="font-medium truncate text-left"
+                      onClick={(e)=>{ e.stopPropagation(); markSeen(p.id, p.updatedAt||Date.now()); openFull(p.id); }}>
+                {p.fullName ? p.fullName : <span className="text-gray-400">name...</span>}
+              </button>
 
-      {/* cards */}
-<div className="grid grid-cols-1 gap-2 w-full">
-  {filtered.map(p=> {
-    const isOpen = !!expanded[p.id];
-    return (
-      <div
-        key={p.id}
-        className={`relative border rounded bg-white shadow-sm p-2 overflow-visible`}
-        onDragOver={(e)=>e.preventDefault()}
-      >
-        {/* header with inline pills */}
-        <div
-  className="p-2 flex flex-wrap items-center gap-2 cursor-pointer"
-  onClick={() => { if (!isOpen) toggleOpen(p.id); }}
->
-          <EditableText
-  value={p.fullName || ''}
-  placeholder="name..."
-  onChange={(v)=>updateP(p.id,{ fullName:v })}
-  className="font-medium truncate"
-  inputClass="font-medium truncate border rounded px-2 py-1 select-text"
-  disabled={!isOpen}
-/>
-
-          {/* quick-glance pills on the same line (hidden when expanded) */}
-          {!expanded[p.id] && (
-            <div className="flex items-center gap-2 flex-wrap">
+              {/* quick glance pills */}
               {p.status ? (
                 <span className={`px-2 py-0.5 rounded-full text-xs border ${statusTone(p.status)}`}>{p.status}</span>
               ) : null}
@@ -881,196 +883,310 @@ const [viewerProspectId, setViewerProspectId] = useState('');
               {(p.city||'').trim() ? (
                 <span className="px-2 py-0.5 rounded-full text-xs border bg-indigo-100 text-indigo-800 border-indigo-200">{p.city}</span>
               ) : null}
-            </div>
-          )}
 
-          <div className="ml-auto flex items-center gap-2">
-            
-            {/* header delete (uses custom confirm via removeP) */}
-            <button
-              type="button"
-              aria-label="Delete"
-              className="w-7 h-7 rounded-full border border-rose-300 text-rose-700 flex items-center justify-center hover:bg-rose-50"
-              onClick={(e)=>{ e.stopPropagation(); removeP(p.id); }}
-              title="Delete"
-            >
-              ×
-            </button>
-          </div>
-        </div>
-
-        {/* details (animated) */}
-        <div
-          className={`transition-[max-height,opacity,transform] duration-200 ease-out overflow-hidden ${isOpen ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-0.5'}`}
-          style={{ maxHeight: isOpen ? 2000 : 0 }}
-          onTransitionEnd={()=>{ if (isOpen) markSeen(p.id, p.updatedAt || Date.now()); }}
-        >
-          <div className="p-2 pt-1">
-            <div className="mt-1 grid grid-cols-2 gap-2 items-start">
-              <div>
-                <div className="text-xs mb-1">Status</div>
-                <StatusPill value={p.status||'New'} onChange={(s)=>updateP(p.id,{status:s})} />
-              </div>
-              <div>
-                <div className="text-xs mb-1">City</div>
-                <InlinePill label={p.city||''} placeholder="Enter city…" onEdit={(v)=>updateP(p.id,{city:v})} full />
-              </div>
-            </div>
-
-            <div className="mt-2 grid grid-cols-2 gap-3 items-start">
-              <div>
-                <div className="text-xs mb-1">Suggested by</div>
-                <InlinePill label={p.sourceName||''} placeholder="name..." onEdit={(v)=>updateP(p.id,{sourceName:v})} full />
-              </div>
-              <div>
-                <div className="text-xs mb-1">known status</div>
-                <TrustSelect value={p.sourceTrust||''} onChange={(v)=>updateP(p.id,{sourceTrust:v})} />
-              </div>
-            </div>
-
-            {/* two columns: resume & photos (smaller tiles) */}
-            <div className="mt-2 grid grid-cols-2 gap-2 w-full">
-              {/* Resume */}
-              <div
-                onDrop={async(e)=>{ e.preventDefault(); await onDropFiles(p.id, e.dataTransfer?.files||null, 'resume'); }}
-                onDragOver={(e)=>e.preventDefault()}
-              >
-                <div className="text-xs mb-1">Resume</div>
-                {p.resume ? (
-                  <div className="group cursor-pointer inline-block" onClick={()=>{ setViewerFile(p.resume); setViewerPhotos([]); setViewerIndex(0); }}>
-                    <div className="w-40"><MiniPreview fileRef={p.resume} /></div>
-                    <div className="flex items-center gap-2 mt-2">
-                      <IconBtn ariaLabel="Share" label="Share" onClick={(e)=>{ e.stopPropagation(); shareRef(p.resume,'resume'); }} className="border-blue-300 text-blue-700 hover:bg-blue-50"><IconShare/></IconBtn>
-                      <IconBtn ariaLabel="Download" label="Download" onClick={(e)=>{ e.stopPropagation(); downloadRef(p.resume); }} className="border-emerald-300 text-emerald-700 hover:bg-emerald-50"><IconDownload/></IconBtn>
-                      <IconBtn ariaLabel="Delete" label="Delete" onClick={async(e)=>{ e.stopPropagation(); const ok=await askConfirm(); if(!ok) return; if (p.resume) await deleteFileRef(p.resume); updateP(p.id,{resume:null}); }} className="border-rose-300 text-rose-700 hover:bg-rose-50"><IconX/></IconBtn>
-                    </div>
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={()=>document.getElementById(`file-resume-${p.id}`)?.click()}
-                    className="h-28 w-40 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 flex flex-col items-center justify-center"
-                  >
-                    <div className="text-3xl leading-none text-gray-400">+</div>
-                    <div className="text-xs text-gray-500 mt-1">Add resume</div>
-                    <input id={`file-resume-${p.id}`} type="file" accept="*/*" className="hidden" onChange={async(e)=>{ const f=e.target.files?.[0]; if(f){ const ref=await attachFile(f); updateP(p.id,{resume:ref}); } e.target.value=""; }} />
-                  </button>
-                )}
-              </div>
-
-              {/* Photos — single box + tiny sliver + small "+" overlay */}
-              <div
-                onDrop={async(e)=>{ e.preventDefault(); const files = Array.from(e.dataTransfer?.files||[]).filter(f=> (f.type||'').startsWith('image/')); if(files.length){ for(const f of files){ const ref=await attachFile(f); updateP(p.id,{photos:[...(p.photos||[]), ref]}); }} }}
-                onDragOver={(e)=>e.preventDefault()}
-              >
-                <div className="text-xs mb-1">Photos</div>
-
-                <div className="relative inline-block">
-                  {/* sliver of second photo (peek) */}
-                  {p.photos?.[1] && (
-                    <div className="absolute left-2 top-2 w-40 h-28 rounded-md bg-white border overflow-hidden opacity-70 pointer-events-none -z-0">
-                      <MiniPreview fileRef={p.photos[1]} />
-                    </div>
-                  )}
-
-                  {/* main photo box OR add box if empty */}
-                  {p.photos?.[0] ? (
-  <div className="relative z-10">
-    <div
-      className="w-40 h-28 rounded-md bg-white border overflow-hidden cursor-pointer"
-      onClick={()=>{ setViewerProspectId(p.id); setViewerPhotos(p.photos||[]); setViewerIndex(0); setViewerFile(p.photos?.[0]); }}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e)=>{ if(e.key==='Enter' || e.key===' '){ e.preventDefault(); setViewerProspectId(p.id); setViewerPhotos(p.photos||[]); setViewerIndex(0); setViewerFile(p.photos?.[0]); } }}
-    >
-      <MiniPreview fileRef={p.photos[0]} />
-    </div>
-
-    {/* small + overlay */}
-    <button
-      type="button"
-      onClick={()=>document.getElementById(`file-photos-${p.id}`)?.click()}
-      className="absolute -bottom-3 -right-3 z-20 w-8 h-8 rounded-full border bg-white shadow flex items-center justify-center"
-      title="Add photo"
-    >+</button>
-  </div>
-) : (
-                    <button
-                      type="button"
-                      onClick={()=>document.getElementById(`file-photos-${p.id}`)?.click()}
-                      className="h-28 w-40 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 flex flex-col items-center justify-center"
-                      title="Add photos"
-                    >
-                      <div className="text-3xl leading-none text-gray-400">+</div>
-                      <div className="text-[11px] text-gray-500 mt-1">Add photos</div>
-                    </button>
-                  )}
-                  <input id={`file-photos-${p.id}`} type="file" accept="image/*" multiple className="hidden" onChange={async(e)=>{ const fs=Array.from(e.target.files||[]); if(fs.length){ const refs=[]; for(const f of fs){ refs.push(await attachFile(f)); } updateP(p.id,{photos:[...(p.photos||[]), ...refs]}); } e.target.value=""; }} />
-                </div>
-              </div>
-            </div>
-
-            {/* Notes */}
-            <div className="mt-2">
-              <div className="text-xs">Notes</div>
-              <div className="relative">
-                <textarea className="border rounded p-2 w-full text-xs pr-12 select-text placeholder-gray-400" placeholder="Type notes…" rows={2} value={p.notes||''} onChange={e=>updateP(p.id,{notes:e.target.value})} />
-                <IconBtn ariaLabel="Share" label="Share" onClick={()=>shareText(p.notes||'')} className="absolute right-2 bottom-2 border-blue-300 text-blue-700 hover:bg-blue-50"><IconShare/></IconBtn>
-              </div>
-            </div>
-
-            {/* Share all (bottom) — show only when ≥ 2 items exist */}
-            {hasTwoShareItems(p) ? (
-              <div className="mt-3">
-                <button type="button" className="px-3 py-1 rounded-full border text-xs bg-white hover:bg-blue-50 border-blue-300 text-blue-700"
-                  onClick={()=>shareAll({ resume:p.resume, photos:p.photos||[], text:p.notes||'' })}
+              {/* delete X (does NOT open editor) */}
+              <div className="ml-auto flex items-center gap-2">
+                <button
+                  type="button"
+                  aria-label="Delete"
+                  className="w-7 h-7 rounded-full border border-rose-300 text-rose-700 flex items-center justify-center hover:bg-rose-50"
+                  onClick={(e)=>{ e.stopPropagation(); removeP(p.id); }}
+                  title="Delete"
                 >
-                  Share all
+                  ×
                 </button>
               </div>
-            ) : null}
+            </div>
           </div>
-        </div>
+        ))}
+
+        {/* Add prospect tile — smaller */}
+        <button type="button"
+                onClick={addProspect}
+                className="h-28 w-40 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 flex flex-col items-center justify-center">
+          <div className="text-4xl leading-none text-gray-400">+</div>
+          <div className="text-xs text-gray-500 mt-1">Add resume</div>
+        </button>
       </div>
-    );
-  })}
 
-  {/* Add prospect tile — smaller */}
-  <button type="button" onClick={addProspect} className="h-28 w-40 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 flex flex-col items-center justify-center">
-    <div className="text-4xl leading-none text-gray-400">+</div>
-    <div className="text-xs text-gray-500 mt-1">Add resume</div>
-  </button>
-</div>
+      {/* Full-screen editor (swipe-down to close) */}
+      {fullOpen && fullItem && (
+        <FullProspectEditor
+          prospect={fullItem}
+          allProfiles={profiles}
+          onChange={(patch)=> updateP(fullItem.id, patch)}
+          onClose={closeFull}
+          onDelete={async ()=>{ await removeP(fullItem.id); closeFull(); }}
+        />
+      )}
 
-
-      {/* Viewer & Confirm */}
+      {/* (old) Viewer & Confirm kept for reuse */}
       {viewerFile && (
-  <Viewer
-    fileRef={viewerFile}
-    photos={viewerPhotos}
-    startIndex={viewerIndex}
-    onClose={()=> { setViewerFile(null); setViewerPhotos([]); setViewerIndex(0); setViewerProspectId(''); }}
-    onDeletePhoto={async (i, ref) => {
-      const ok = await askConfirm(); if (!ok) return;
-      try { if (ref) await deleteFileRef(ref); } catch {}
-      const cur = ensureArray((safe.find(x=>x.id===viewerProspectId) || {}).photos);
-      const next = cur.filter((_, idx)=> idx !== i);
-      updateP(viewerProspectId, { photos: next });
-      setViewerPhotos(next);
-      if (next.length === 0) { setViewerFile(null); setViewerProspectId(''); }
-      else {
-        const newIndex = Math.min(i, next.length-1);
-        setViewerIndex(newIndex);
-        setViewerFile(next[newIndex]);
-      }
-    }}
-  />
-)}
+        <Viewer
+          fileRef={viewerFile}
+          photos={viewerPhotos}
+          startIndex={viewerIndex}
+          onClose={()=> { setViewerFile(null); setViewerPhotos([]); setViewerIndex(0); setViewerProspectId(''); }}
+          onDeletePhoto={async (i, ref) => {
+            const ok = await askConfirm(); if (!ok) return;
+            try { if (ref) await deleteFileRef(ref); } catch {}
+            const cur = ensureArray((safe.find(x=>x.id===viewerProspectId) || {}).photos);
+            const next = cur.filter((_, idx)=> idx !== i);
+            updateP(viewerProspectId, { photos: next });
+            setViewerPhotos(next);
+            if (next.length === 0) { setViewerFile(null); setViewerProspectId(''); }
+            else {
+              const newIndex = Math.min(i, next.length-1);
+              setViewerIndex(newIndex);
+              setViewerFile(next[newIndex]);
+            }
+          }}
+        />
+      )}
       {Confirm}
     </div>
   );
 }
 
+/* ===== Full-screen editor component =====
+   - Name is editable here
+   - Swipe down (or Esc) to close
+*/
+function FullProspectEditor({ prospect, allProfiles, onChange, onClose, onDelete }) {
+  const p = prospect || {};
+  const [viewerFile, setViewerFile] = React.useState(null);
+  const [viewerPhotos, setViewerPhotos] = React.useState([]);
+  const [viewerIndex, setViewerIndex] = React.useState(0);
+  const { ask: askConfirm, Confirm } = useConfirm();
+
+  // swipe-down to close
+  const [drag, setDrag] = React.useState({ active:false, startX:0, startY:0, dx:0, dy:0 });
+  const HORIZ = 60, VERT = 80, ANGLE = 15;
+
+  const onTouchStart = (e) => {
+    if (e.touches.length !== 1) return;
+    const t = e.touches[0];
+    setDrag({ active:true, startX:t.clientX, startY:t.clientY, dx:0, dy:0 });
+  };
+  const onTouchMove = (e) => {
+    if (!drag.active || e.touches.length !== 1) return;
+    const t = e.touches[0];
+    setDrag(d => ({ ...d, dx: t.clientX - d.startX, dy: t.clientY - d.startY }));
+  };
+  const onTouchEnd = () => {
+    if (!drag.active) return;
+    const { dx, dy } = drag;
+    const ax = Math.abs(dx), ay = Math.abs(dy);
+    if (ay - ax > ANGLE && dy > VERT) onClose?.();
+    setDrag({ active:false, startX:0, startY:0, dx:0, dy:0 });
+  };
+
+  React.useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose?.(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const addPhotos = async (files) => {
+    const refs = [];
+    for (const f of Array.from(files||[])) refs.push(await attachFile(f));
+    onChange({ photos:[...(p.photos||[]), ...refs] });
+  };
+
+  const hasTwo = (() => {
+    let c=0; if (p.resume) c++; if ((p.photos||[]).length) c++; if ((p.notes||'').trim()) c++; return c>=2;
+  })();
+
+  return (
+    <div
+      className="fixed inset-0 z-[3500] bg-white flex items-start justify-center p-0"
+      role="dialog"
+      aria-label="Edit prospect"
+      onTouchStart={onTouchStart}
+      onTouchMove={onTouchMove}
+      onTouchEnd={onTouchEnd}
+      style={{
+        transform: drag.active && drag.dy > 0 ? `translateY(${Math.max(0, drag.dy)}px)` : undefined,
+        transition: drag.active ? 'none' : 'transform 160ms ease-out',
+      }}
+    >
+      <div className="w-full max-w-3xl mx-auto">
+        {/* grab handle */}
+        <div className="sticky top-0 z-10 bg-white/95 backdrop-blur border-b">
+          <div className="h-5 flex items-center justify-center">
+            <div className="w-10 h-1.5 rounded-full bg-gray-300 mt-2" />
+          </div>
+          <div className="px-3 pb-2 flex items-center gap-2">
+            {/* editable name here */}
+            <EditableText
+              value={p.fullName || ''}
+              placeholder="name..."
+              onChange={(v)=>onChange({ fullName: v })}
+              className="font-medium text-base truncate"
+              inputClass="font-medium border rounded px-2 py-1 select-text"
+            />
+            <div className="ml-auto flex items-center gap-2">
+              <button className="px-3 py-1 rounded-full border text-xs"
+                      onClick={async()=>{ const ok=await askConfirm(); if(!ok) return; await onDelete?.(); }}>
+                Delete
+              </button>
+              <button className="px-3 py-1 rounded-full border text-xs" onClick={onClose}>Done</button>
+            </div>
+          </div>
+        </div>
+
+        {/* content */}
+        <div className="p-3 space-y-3">
+          <div className="grid grid-cols-2 gap-2 items-start">
+            <div>
+              <div className="text-xs mb-1">Status</div>
+              <StatusPill value={p.status||'New'} onChange={(s)=>onChange({status:s})} />
+            </div>
+            <div>
+              <div className="text-xs mb-1">City</div>
+              <InlinePill label={p.city||''} placeholder="Enter city…" onEdit={(v)=>onChange({city:v})} full />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 items-start">
+            <div>
+              <div className="text-xs mb-1">Suggested by</div>
+              <InlinePill label={p.sourceName||''} placeholder="name..." onEdit={(v)=>onChange({sourceName:v})} full />
+            </div>
+            <div>
+              <div className="text-xs mb-1">known status</div>
+              <TrustSelect value={p.sourceTrust||''} onChange={(v)=>onChange({sourceTrust:v})} />
+            </div>
+          </div>
+
+          {/* Resume & Photos */}
+          <div className="grid grid-cols-2 gap-2 w-full">
+            {/* Resume */}
+            <div
+              onDrop={async(e)=>{ e.preventDefault(); await (async()=>{ const f=e.dataTransfer?.files?.[0]; if(f){ const ref=await attachFile(f); onChange({resume:ref}); }})(); }}
+              onDragOver={(e)=>e.preventDefault()}
+            >
+              <div className="text-xs mb-1">Resume</div>
+              {p.resume ? (
+                <div className="group cursor-pointer inline-block" onClick={()=>{ setViewerFile(p.resume); setViewerPhotos([]); setViewerIndex(0); }}>
+                  <div className="w-40"><MiniPreview fileRef={p.resume} /></div>
+                  <div className="flex items-center gap-2 mt-2">
+                    <IconBtn ariaLabel="Share" label="Share" onClick={(e)=>{ e.stopPropagation(); shareRef(p.resume,'resume'); }} className="border-blue-300 text-blue-700 hover:bg-blue-50"><IconShare/></IconBtn>
+                    <IconBtn ariaLabel="Download" label="Download" onClick={(e)=>{ e.stopPropagation(); downloadRef(p.resume); }} className="border-emerald-300 text-emerald-700 hover:bg-emerald-50"><IconDownload/></IconBtn>
+                    <IconBtn ariaLabel="Delete" label="Delete" onClick={async(e)=>{ e.stopPropagation(); const ok=await askConfirm(); if(!ok) return; try{ if(p.resume) await deleteFileRef(p.resume);}catch{} onChange({resume:null}); }} className="border-rose-300 text-rose-700 hover:bg-rose-50"><IconX/></IconBtn>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={()=>document.getElementById(`fs-resume-${p.id}`)?.click()}
+                  className="h-28 w-40 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 flex flex-col items-center justify-center"
+                >
+                  <div className="text-3xl leading-none text-gray-400">+</div>
+                  <div className="text-xs text-gray-500 mt-1">Add resume</div>
+                  <input id={`fs-resume-${p.id}`} type="file" accept="*/*" className="hidden"
+                         onChange={async(e)=>{ const f=e.target.files?.[0]; if(f){ const ref=await attachFile(f); onChange({resume:ref}); } e.target.value=''; }} />
+                </button>
+              )}
+            </div>
+
+            {/* Photos */}
+            <div
+              onDrop={async(e)=>{ e.preventDefault(); const files = Array.from(e.dataTransfer?.files||[]).filter(f=> (f.type||'').startsWith('image/')); if(files.length){ await addPhotos(files); } }}
+              onDragOver={(e)=>e.preventDefault()}
+            >
+              <div className="text-xs mb-1">Photos</div>
+              <div className="relative inline-block">
+                {p.photos?.[1] && (
+                  <div className="absolute left-2 top-2 w-40 h-28 rounded-md bg-white border overflow-hidden opacity-70 pointer-events-none -z-0">
+                    <MiniPreview fileRef={p.photos[1]} />
+                  </div>
+                )}
+                {p.photos?.[0] ? (
+                  <div className="relative z-10">
+                    <div
+                      className="w-40 h-28 rounded-md bg-white border overflow-hidden cursor-pointer"
+                      onClick={()=>{ setViewerPhotos(p.photos||[]); setViewerIndex(0); setViewerFile(p.photos?.[0]); }}
+                    >
+                      <MiniPreview fileRef={p.photos[0]} />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={()=>document.getElementById(`fs-photos-${p.id}`)?.click()}
+                      className="absolute -bottom-3 -right-3 z-20 w-8 h-8 rounded-full border bg-white shadow flex items-center justify-center"
+                      title="Add photo"
+                    >+</button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={()=>document.getElementById(`fs-photos-${p.id}`)?.click()}
+                    className="h-28 w-40 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 flex flex-col items-center justify-center"
+                  >
+                    <div className="text-3xl leading-none text-gray-400">+</div>
+                    <div className="text-[11px] text-gray-500 mt-1">Add photos</div>
+                  </button>
+                )}
+                <input id={`fs-photos-${p.id}`} type="file" accept="image/*" multiple className="hidden"
+                       onChange={async(e)=>{ const fs=Array.from(e.target.files||[]); if(fs.length){ await addPhotos(fs); } e.target.value=''; }} />
+              </div>
+            </div>
+          </div>
+
+          {/* Notes */}
+          <div>
+            <div className="text-xs">Notes</div>
+            <div className="relative">
+              <textarea className="border rounded p-2 w-full text-xs pr-12 select-text placeholder-gray-400"
+                        placeholder="Type notes…" rows={3}
+                        value={p.notes||''}
+                        onChange={e=>onChange({notes:e.target.value})} />
+              <IconBtn ariaLabel="Share" label="Share" onClick={()=>shareText(p.notes||'')} className="absolute right-2 bottom-2 border-blue-300 text-blue-700 hover:bg-blue-50"><IconShare/></IconBtn>
+            </div>
+          </div>
+
+          {/* Share all */}
+          {hasTwo && (
+            <div>
+              <button type="button"
+                      className="px-3 py-1 rounded-full border text-xs bg-white hover:bg-blue-50 border-blue-300 text-blue-700"
+                      onClick={()=>shareAll({ resume:p.resume, photos:p.photos||[], text:p.notes||'' })}>
+                Share all
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* local viewer inside full editor */}
+      {viewerFile && (
+        <Viewer
+          fileRef={viewerFile}
+          photos={viewerPhotos}
+          startIndex={viewerIndex}
+          onClose={()=> { setViewerFile(null); setViewerPhotos([]); setViewerIndex(0); }}
+          onDeletePhoto={async (i, ref) => {
+            const ok = await askConfirm(); if (!ok) return;
+            try { if (ref) await deleteFileRef(ref); } catch {}
+            const cur = ensureArray(p.photos);
+            const next = cur.filter((_, idx)=> idx !== i);
+            onChange({ photos: next });
+            setViewerPhotos(next);
+            if (next.length === 0) { setViewerFile(null); }
+            else {
+              const newIndex = Math.min(i, next.length-1);
+              setViewerIndex(newIndex);
+              setViewerFile(next[newIndex]);
+            }
+          }}
+        />
+      )}
+{Confirm}
+
+    </div>
+  );
+}
+   
 // ===== Inline editors & selects =====
 function StatusPill({ value, onChange }){
   const [open,setOpen]=useState(false); const [alignRight,setAlignRight]=useState(false); const ref=useRef(null);
