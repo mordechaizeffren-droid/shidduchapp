@@ -461,6 +461,144 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose }) {
     </div>
   );
 }
+// ===== Small menus / actions re-add =====
+function PillMenu({ label, options=[], onPick, strong }) {
+  const [open, setOpen] = useState(false);
+  const [alignRight, setAlignRight] = useState(false);
+  const wrapRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (ev) => { if (wrapRef.current && !wrapRef.current.contains(ev.target)) setOpen(false); };
+    document.addEventListener('click', onDoc);
+    return () => document.removeEventListener('click', onDoc);
+  }, [open]);
+
+  const toggle = (e) => {
+    e.stopPropagation();
+    const MENU_W = 176;
+    if (wrapRef.current) {
+      const r = wrapRef.current.getBoundingClientRect();
+      setAlignRight(r.left + MENU_W > window.innerWidth);
+    }
+    setOpen(o => !o);
+  };
+
+  return (
+    <div ref={wrapRef} className="relative inline-block">
+      <button type="button"
+        aria-expanded={open}
+        className={`px-3 py-1 rounded-full text-sm font-medium border ${strong ? '' : 'bg-white'}`}
+        onClick={toggle}
+      >
+        <span className="inline-block w-4 h-3 align-middle mr-1">
+          <span className="block w-4 h-0.5 bg-gray-400 rounded mb-0.5"></span>
+          <span className="block w-4 h-0.5 bg-gray-400 rounded mb-0.5"></span>
+          <span className="block w-4 h-0.5 bg-gray-400 rounded"></span>
+        </span>
+        {label || 'Select'}
+      </button>
+      {open && (
+        <div className={`absolute z-50 mt-1 w-44 rounded border bg-white shadow ${alignRight ? 'right-0' : 'left-0'}`}>
+          {options.map(opt => (
+            <button key={opt} type="button"
+              className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm"
+              onClick={(e)=>{ e.stopPropagation(); onPick?.(opt); setOpen(false); }}
+            >
+              {opt}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AddDropdown({ disabled=false }) {
+  const [open, setOpen] = useState(false);
+  const [alignRight, setAlignRight] = useState(false);
+  const wrapRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e)=>{ if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('click', onDoc);
+    return ()=>document.removeEventListener('click', onDoc);
+  }, [open]);
+
+  const toggle = () => {
+    if (disabled) return;
+    const MENU_W = 176;
+    if (wrapRef.current) {
+      const r = wrapRef.current.getBoundingClientRect();
+      setAlignRight(r.left + MENU_W > window.innerWidth);
+    }
+    setOpen(o=>!o);
+  };
+
+  const triggerFiles = () => {
+    if (disabled) { alert("Add a profile first."); return; }
+    window.dispatchEvent(new Event('open-quick-add'));
+    setOpen(false);
+  };
+  const triggerPaste = () => {
+    if (disabled) { alert("Add a profile first."); return; }
+    window.dispatchEvent(new Event('open-paste-add'));
+    setOpen(false);
+  };
+
+  return (
+    <div ref={wrapRef} className="relative inline-block">
+      <button type="button" aria-label="Add" title="Add"
+        className={`px-2 py-1 rounded border flex items-center gap-1 ${disabled ? 'opacity-40' : ''}`}
+        onClick={toggle}
+      >
+        <IconPlus />
+      </button>
+      {open && (
+        <div className={`absolute z-50 mt-1 w-44 rounded border bg-white shadow ${alignRight ? 'right-0' : 'left-0'}`}>
+          <button type="button" className="w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center gap-2" onClick={triggerFiles}>
+            <IconDownload /><span>From files</span>
+          </button>
+          <button type="button" className="w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center gap-2" onClick={triggerPaste}>
+            <span className="text-lg leading-none">📋</span><span>Paste</span>
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SettingsFab({ onExport, onImport, onOpenSync }) {
+  const [open, setOpen] = useState(false);
+  const wrap = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e)=>{ if (wrap.current && !wrap.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('click', onDoc);
+    return ()=>document.removeEventListener('click', onDoc);
+  }, [open]);
+
+  return (
+    <div ref={wrap} className="fixed bottom-4 right-4 z-50 flex flex-col items-end">
+      {open && (
+        <div className="mb-2 w-48 rounded border bg-white shadow">
+          <button type="button" className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm" onClick={() => { onExport?.(); setOpen(false); }}>Export</button>
+          <button type="button" className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm" onClick={() => { onImport?.(); setOpen(false); }}>Import</button>
+          <div className="my-1 border-t" />
+          <button type="button" className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm" onClick={() => { onOpenSync?.(); setOpen(false); }}>Sync settings…</button>
+        </div>
+      )}
+      <button type="button" aria-label="Settings"
+        className="w-11 h-11 rounded-full border border-gray-200 bg-white shadow-sm flex items-center justify-center"
+        onClick={() => setOpen(o => !o)}
+      >
+        <IconGear />
+      </button>
+    </div>
+  );
+}
 
 // ----------------------------------------------------------------------------
 // SyncPanel (modal)
