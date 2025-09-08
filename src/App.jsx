@@ -1213,11 +1213,6 @@ function MyProfile({ profile, saveProfile }) {
   );
 }
 
-
-    </div>
-  );
-}
-   
 // ===== Inline editors & selects =====
 function StatusPill({ value, onChange }){
   const [open,setOpen]=useState(false); const [alignRight,setAlignRight]=useState(false); const ref=useRef(null);
