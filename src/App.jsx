@@ -452,7 +452,7 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
   }, [zoomLocked, isImg, isPdf, photos.length, pdfPages, onClose]);
 
   // current photo url
-  const currentPhotoRef = isImg && photos.length ? photos[idx] : null;
+  const currentPhotoRef = isImg ? (photos.length ? photos[idx] : fileRef) : null;
   const currentPhotoUrl = useFilePreview(currentPhotoRef || null);
 
   return (
