@@ -1088,91 +1088,194 @@ function FullProspectEditor({ prospect, allProfiles, onChange, onClose, onDelete
             </div>
           </div>
 
-          {/* Resume & Photos */}
-          <div className="grid grid-cols-2 gap-2 w-full">
-            {/* Resume */}
-            <div
-              onDrop={async(e)=>{ e.preventDefault(); await (async()=>{ const f=e.dataTransfer?.files?.[0]; if(f){ const ref=await attachFile(f); onChange({resume:ref}); }})(); }}
-              onDragOver={(e)=>e.preventDefault()}
-            >
-              <div className="text-xs mb-1">Resume</div>
-              {p.resume ? (
-                <div className="group cursor-pointer inline-block" onClick={()=>{ setViewerFile(p.resume); setViewerPhotos([]); setViewerIndex(0); }}>
-                  <div className="w-40"><MiniPreview fileRef={p.resume} /></div>
-                  <div className="flex items-center gap-2 mt-2">
-                    <IconBtn ariaLabel="Share" label="Share" onClick={(e)=>{ e.stopPropagation(); shareRef(p.resume,'resume'); }} className="border-blue-300 text-blue-700 hover:bg-blue-50"><IconShare/></IconBtn>
-                    <IconBtn ariaLabel="Download" label="Download" onClick={(e)=>{ e.stopPropagation(); downloadRef(p.resume); }} className="border-emerald-300 text-emerald-700 hover:bg-emerald-50"><IconDownload/></IconBtn>
-                    <IconBtn ariaLabel="Delete" label="Delete" onClick={async(e)=>{ e.stopPropagation(); const ok=await askConfirm(); if(!ok) return; try{ if(p.resume) await deleteFileRef(p.resume);}catch{} onChange({resume:null}); }} className="border-rose-300 text-rose-700 hover:bg-rose-50"><IconX/></IconBtn>
-                  </div>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={()=>document.getElementById(`fs-resume-${p.id}`)?.click()}
-                  className="h-28 w-40 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 flex flex-col items-center justify-center"
-                >
-                  <div className="text-3xl leading-none text-gray-400">+</div>
-                  <div className="text-xs text-gray-500 mt-1">Add resume</div>
-                  <input id={`fs-resume-${p.id}`} type="file" accept="*/*" className="hidden"
-                         onChange={async(e)=>{ const f=e.target.files?.[0]; if(f){ const ref=await attachFile(f); onChange({resume:ref}); } e.target.value=''; }} />
-                </button>
-              )}
-            </div>
+          {/* Resume & Photos — floating corner actions */}
+<div className="grid grid-cols-2 gap-6 w-full items-start">
+  {/* Resume */}
+  <div
+    onDrop={async (e) => {
+      e.preventDefault();
+      const f = e.dataTransfer?.files?.[0];
+      if (f) { const ref = await attachFile(f); onChange({ resume: ref }); }
+    }}
+    onDragOver={(e) => e.preventDefault()}
+  >
+    <div className="text-sm font-medium mb-1">Resume</div>
 
-            {/* Photos */}
-            <div
-              onDrop={async(e)=>{ e.preventDefault(); const files = Array.from(e.dataTransfer?.files||[]).filter(f=> (f.type||'').startsWith('image/')); if(files.length){ await addPhotos(files); } }}
-              onDragOver={(e)=>e.preventDefault()}
-            >
-              <div className="text-xs mb-1">Photos</div>
-              <div className="relative inline-block">
-                {p.photos?.[1] && (
-                  <div className="absolute left-2 top-2 w-40 h-28 rounded-md bg-white border overflow-hidden opacity-70 pointer-events-none -z-0">
-                    <MiniPreview fileRef={p.photos[1]} />
-                  </div>
-                )}
-                {p.photos?.[0] ? (
-                  <div className="relative z-10">
-                    <div
-                      className="w-40 h-28 rounded-md bg-white border overflow-hidden cursor-pointer"
-                      onClick={()=>{ setViewerPhotos(p.photos||[]); setViewerIndex(0); setViewerFile(p.photos?.[0]); }}
-                    >
-                      <MiniPreview fileRef={p.photos[0]} />
-                    </div>
-                    <button
-                      type="button"
-                      onClick={()=>document.getElementById(`fs-photos-${p.id}`)?.click()}
-                      className="absolute -bottom-3 -right-3 z-20 w-8 h-8 rounded-full border bg-white shadow flex items-center justify-center"
-                      title="Add photo"
-                    >+</button>
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={()=>document.getElementById(`fs-photos-${p.id}`)?.click()}
-                    className="h-28 w-40 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 flex flex-col items-center justify-center"
-                  >
-                    <div className="text-3xl leading-none text-gray-400">+</div>
-                    <div className="text-[11px] text-gray-500 mt-1">Add photos</div>
-                  </button>
-                )}
-                <input id={`fs-photos-${p.id}`} type="file" accept="image/*" multiple className="hidden"
-                       onChange={async(e)=>{ const fs=Array.from(e.target.files||[]); if(fs.length){ await addPhotos(fs); } e.target.value=''; }} />
-              </div>
-            </div>
+    {p.resume ? (
+      <div className="relative inline-block">
+        {/* preview (click to view) */}
+        <div
+          className="w-44 h-28 rounded-lg bg-white border overflow-hidden cursor-pointer"
+          onClick={() => { setViewerFile(p.resume); setViewerPhotos([]); setViewerIndex(0); }}
+        >
+          <MiniPreview fileRef={p.resume} />
+        </div>
+
+        {/* floating buttons */}
+        <IconBtn
+          ariaLabel="Share resume"
+          label="Share"
+          onClick={(e) => { e.stopPropagation(); shareRef(p.resume, 'resume'); }}
+          className="absolute bottom-2 left-2 z-20 border-blue-300 text-blue-700 bg-white/90 hover:bg-white"
+        >
+          <IconShare />
+        </IconBtn>
+
+        <IconBtn
+          ariaLabel="Download resume"
+          label="Download"
+          onClick={(e) => { e.stopPropagation(); downloadRef(p.resume); }}
+          className="absolute bottom-2 left-16 z-20 border-emerald-300 text-emerald-700 bg-white/90 hover:bg-white"
+        >
+          <IconDownload />
+        </IconBtn>
+
+        <IconBtn
+          ariaLabel="Delete resume"
+          label="Delete"
+          onClick={async (e) => {
+            e.stopPropagation();
+            const ok = await askConfirm(); if (!ok) return;
+            try { if (p.resume) await deleteFileRef(p.resume); } catch {}
+            onChange({ resume: null });
+          }}
+          className="absolute -top-3 -right-3 z-20 border-rose-300 text-rose-700 bg-white shadow"
+        >
+          <span className="text-lg leading-none">×</span>
+        </IconBtn>
+      </div>
+    ) : (
+      <button
+        type="button"
+        onClick={() => document.getElementById(`fs-resume-${p.id}`)?.click()}
+        className="h-28 w-44 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 flex flex-col items-center justify-center"
+      >
+        <div className="text-3xl leading-none text-gray-400">+</div>
+        <div className="text-xs text-gray-500 mt-1">Add resume</div>
+        <input
+          id={`fs-resume-${p.id}`}
+          type="file"
+          accept="*/*"
+          className="hidden"
+          onChange={async (e) => { const f = e.target.files?.[0]; if (f) { const ref = await attachFile(f); onChange({ resume: ref }); } e.target.value=''; }}
+        />
+      </button>
+    )}
+  </div>
+
+  {/* Photos */}
+  <div
+    onDrop={async (e) => {
+      e.preventDefault();
+      const files = Array.from(e.dataTransfer?.files || []).filter(f => (f.type || '').startsWith('image/'));
+      if (files.length) {
+        const refs = [];
+        for (const f of files) refs.push(await attachFile(f));
+        onChange({ photos: [ ...(p.photos || []), ...refs ] });
+      }
+    }}
+    onDragOver={(e) => e.preventDefault()}
+  >
+    <div className="text-sm font-medium mb-1">Photos</div>
+
+    <div className="relative inline-block">
+      {p.photos?.[1] && (
+        <div className="absolute left-2 top-2 w-44 h-28 rounded-lg bg-white border overflow-hidden opacity-70 pointer-events-none -z-0">
+          <MiniPreview fileRef={p.photos[1]} />
+        </div>
+      )}
+
+      {p.photos?.[0] ? (
+        <div className="relative z-10">
+          <div
+            className="w-44 h-28 rounded-lg bg-white border overflow-hidden cursor-pointer"
+            onClick={() => { setViewerPhotos(p.photos || []); setViewerIndex(0); setViewerFile(p.photos?.[0]); }}
+          >
+            <MiniPreview fileRef={p.photos[0]} />
           </div>
 
-          {/* Notes */}
-          <div>
-            <div className="text-xs">Notes</div>
-            <div className="relative">
-              <textarea className="border rounded p-2 w-full text-xs pr-12 select-text placeholder-gray-400"
-                        placeholder="Type notes…" rows={3}
-                        value={p.notes||''}
-                        onChange={e=>onChange({notes:e.target.value})} />
-              <IconBtn ariaLabel="Share" label="Share" onClick={()=>shareText(p.notes||'')} className="absolute right-2 bottom-2 border-blue-300 text-blue-700 hover:bg-blue-50"><IconShare/></IconBtn>
-            </div>
-          </div>
+          {/* floating buttons */}
+          <IconBtn
+            ariaLabel="Share photos"
+            label="Share"
+            onClick={(e) => { e.stopPropagation(); if (p.photos?.[0]) shareRef(p.photos[0], 'photo'); }}
+            className="absolute bottom-2 left-2 z-20 border-blue-300 text-blue-700 bg-white/90 hover:bg-white"
+          >
+            <IconShare />
+          </IconBtn>
+
+          <IconBtn
+            ariaLabel="Download first photo"
+            label="Download"
+            onClick={(e) => { e.stopPropagation(); if (p.photos?.[0]) downloadRef(p.photos[0]); }}
+            className="absolute bottom-2 left-16 z-20 border-emerald-300 text-emerald-700 bg-white/90 hover:bg-white"
+          >
+            <IconDownload />
+          </IconBtn>
+
+          {/* add photo */}
+          <button
+            type="button"
+            onClick={() => document.getElementById(`fs-photos-${p.id}`)?.click()}
+            className="absolute bottom-2 right-2 z-20 w-9 h-9 rounded-full border bg-white shadow flex items-center justify-center"
+            title="Add photo"
+            aria-label="Add photo"
+          >
+            +
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => document.getElementById(`fs-photos-${p.id}`)?.click()}
+          className="h-28 w-44 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 flex flex-col items-center justify-center"
+        >
+          <div className="text-3xl leading-none text-gray-400">+</div>
+          <div className="text-[11px] text-gray-500 mt-1">Add photos</div>
+        </button>
+      )}
+      <input
+        id={`fs-photos-${p.id}`}
+        type="file"
+        accept="image/*"
+        multiple
+        className="hidden"
+        onChange={async (e) => {
+          const fs = Array.from(e.target.files || []);
+          if (fs.length) {
+            const refs = [];
+            for (const f of fs) refs.push(await attachFile(f));
+            onChange({ photos: [ ...(p.photos || []), ...refs ] });
+          }
+          e.target.value = '';
+        }}
+      />
+    </div>
+  </div>
+</div>
+
+{/* Notes — full width, share in bottom-left */}
+<div className="mt-2">
+  <div className="text-sm font-medium">Notes</div>
+  <div className="relative">
+    <textarea
+      className="border rounded p-2 w-full text-sm pr-12 select-text placeholder-gray-400"
+      placeholder="Type notes…"
+      rows={3}
+      value={p.notes || ''}
+      onChange={(e) => onChange({ notes: e.target.value })}
+    />
+    <IconBtn
+      ariaLabel="Share notes"
+      label="Share"
+      onClick={() => shareText(p.notes || '')}
+      className="absolute left-2 bottom-2 border-blue-300 text-blue-700 hover:bg-blue-50"
+    >
+      <IconShare />
+    </IconBtn>
+  </div>
+</div>
+
 
           {/* Share all */}
           {hasTwo && (
