@@ -841,20 +841,49 @@ function Prospects({
         <button className="px-3 py-1 rounded-full border" onClick={addProfile} aria-label="Add profile">+</button>
       </div>
 
-      {/* search + filter + Add */}
-      <div className="flex items-center gap-2">
-        <input className="border rounded px-2 py-1 text-sm flex-1 select-text"
-               placeholder="Search name, city, notes..."
-               value={q} onChange={e=>setQ(e.target.value)} />
-        {pasteOn && (<input ref={pasteRef} onPaste={handlePaste}
-                            className="border rounded px-2 py-1 text-sm select-text"
-                            placeholder="Paste here…" aria-label="Paste here" />)}
-        <PillMenu label={statusFilter||'All'} options={['All',...STATUS]}
-                  onPick={(s)=>setStatusFilter(s==='All'?'':s)} />
-        <input ref={quickRef} type="file" accept="*/*" multiple className="hidden"
-               onChange={e=>{ const fs=e.target.files; if(fs?.length){ for(const f of Array.from(fs)) quickAddFromPickedFile(f); } e.target.value=''; }} />
-        <AddDropdown disabled={!profiles.length} />
-      </div>
+      {/* search + filter + Add (All on the left) */}
+<div className="flex items-center gap-2">
+  <PillMenu
+    label={statusFilter || 'All'}
+    options={['All', ...STATUS]}
+    onPick={(s)=>setStatusFilter(s==='All' ? '' : s)}
+  />
+
+  <input
+    className="border rounded px-2 py-1 text-sm flex-1 select-text"
+    placeholder="Search name, city, notes..."
+    value={q}
+    onChange={e=>setQ(e.target.value)}
+  />
+
+  {pasteOn && (
+    <input
+      ref={pasteRef}
+      onPaste={handlePaste}
+      className="border rounded px-2 py-1 text-sm select-text"
+      placeholder="Paste here…"
+      aria-label="Paste here"
+    />
+  )}
+
+  <input
+    ref={quickRef}
+    type="file"
+    accept="*/*"
+    multiple
+    className="hidden"
+    onChange={e=>{
+      const fs = e.target.files;
+      if (fs?.length) {
+        for (const f of Array.from(fs)) quickAddFromPickedFile(f);
+      }
+      e.target.value = '';
+    }}
+  />
+
+  <AddDropdown disabled={!profiles.length} />
+</div>
+
 
       {/* cards (collapsed rows) */}
       <div className="grid grid-cols-1 gap-2 w-full">
