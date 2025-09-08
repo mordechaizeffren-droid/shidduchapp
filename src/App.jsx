@@ -359,14 +359,14 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
         const blob = await dbFiles.getItem(fileRef.id);
         if (!blob) throw new Error('no-blob');
         const ab = await blob.arrayBuffer();
-        const mod = await Promise.race([
-          import('https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/legacy/build/pdf.min.mjs'),
-          watchdog
-        ]).catch(() => null);
-        if (!mod) throw new Error('import-failed');
-        const pdfjs = mod.default || mod;
-        if ('disableWorker' in pdfjs) pdfjs.disableWorker = true;
-        if (pdfjs.GlobalWorkerOptions) pdfjs.GlobalWorkerOptions.workerSrc = undefined;
+        const pdfjs = await loadPdfjs();
+try {
+  pdfjs.disableWorker = false; // use worker for speed/stability
+  if (pdfjs.GlobalWorkerOptions) {
+    pdfjs.GlobalWorkerOptions.workerSrc =
+      'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+  }
+} catch {}
         const doc = await pdfjs.getDocument({ data: ab }).promise;
         if (cancelled) { doc.destroy?.(); return; }
         setPdfPages(doc.numPages || null);
