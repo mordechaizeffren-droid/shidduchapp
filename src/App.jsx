@@ -294,38 +294,101 @@ function MiniPreview({ fileRef }) {
 function Viewer({ fileRef, startIndex=0, photos=[], onClose, onDeletePhoto }) {
   const url = useFilePreview(fileRef);
   const isImg = (fileRef?.type || "").startsWith("image/");
+
+  const currentIsPdf =
+    (fileRef?.type || "").toLowerCase() === "application/pdf" ||
+    (fileRef?.name || "").toLowerCase().endsWith(".pdf");
+
+  // iOS (incl. iPadOS) — use <object> for PDFs
+  const isIOS =
+    typeof navigator !== "undefined" &&
+    (/iPad|iPhone|iPod/.test(navigator.userAgent) ||
+      (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1));
+
+  // drag/swipe state (used to animate the sheet while swiping)
   const [drag, setDrag] = useState({ active:false, startY:0, dy:0 });
 
+  // ESC closes
   useEffect(() => {
     const h = (e) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
   }, [onClose]);
 
-  const onTouchStart = (e) => { setDrag({ active:true, startY:e.touches[0].clientY, dy:0 }); };
-  const onTouchMove = (e) => { if(!drag.active) return; const dy = e.touches[0].clientY - drag.startY; setDrag((d)=>({ ...d, dy })); };
+  // IMAGE-ONLY: swipe on container
+  const onTouchStart = (e) => {
+    if (e.touches.length !== 1) return; // ignore pinch
+    setDrag({ active:true, startY:e.touches[0].clientY, dy:0 });
+  };
+  const onTouchMove = (e) => {
+    if (!drag.active || e.touches.length !== 1) return;
+    const dy = e.touches[0].clientY - drag.startY;
+    setDrag((d)=>({ ...d, dy }));
+  };
   const onTouchEnd = () => {
     if (!drag.active) return;
     if (drag.dy > 60) onClose();
     setDrag({ active:false, startY:0, dy:0 });
   };
 
+  // PDF: swipe anywhere (global listeners) without blocking pinch/scroll
+  useEffect(() => {
+    if (!currentIsPdf) return;
+
+    let active = false;
+    let multi = false;
+    let startY = 0;
+    let lastDy = 0;
+
+    const gs = (e) => {
+      // start: allow only single finger
+      if (e.touches.length !== 1) { multi = true; active = false; return; }
+      multi = false;
+      active = true;
+      startY = e.touches[0].clientY;
+      lastDy = 0;
+      setDrag({ active:true, startY, dy:0 });
+    };
+    const gm = (e) => {
+      if (!active || multi || e.touches.length !== 1) return;
+      const dy = e.touches[0].clientY - startY;
+      lastDy = dy;
+      setDrag((d) => ({ ...d, dy }));
+    };
+    const ge = () => {
+      if (active && !multi && lastDy > 60) onClose();
+      active = false; multi = false; startY = 0; lastDy = 0;
+      setDrag({ active:false, startY:0, dy:0 });
+    };
+
+    // passive listeners → don’t block PDF scroll/pinch
+    window.addEventListener('touchstart', gs, { passive: true });
+    window.addEventListener('touchmove', gm, { passive: true });
+    window.addEventListener('touchend', ge, { passive: true });
+
+    return () => {
+      window.removeEventListener('touchstart', gs, { passive: true });
+      window.removeEventListener('touchmove', gm, { passive: true });
+      window.removeEventListener('touchend', ge, { passive: true });
+    };
+  }, [currentIsPdf, onClose]);
+
+  // gallery (for photos)
   const [idx, setIdx] = useState(startIndex);
   useEffect(()=>setIdx(startIndex),[startIndex, fileRef?.id]);
 
   const canGallery = isImg && photos.length > 0;
   const currentRef = canGallery ? photos[idx] : fileRef;
   const currentUrl = useFilePreview(currentRef);
-  const currentIsImg = (currentRef?.type || "").startsWith("image/");
-  const currentIsPdf = (currentRef?.type || "").toLowerCase() === "application/pdf" || (currentRef?.name || "").toLowerCase().endsWith(".pdf");
-// iOS (includes iPadOS) detection for better PDF rendering
-const isIOS =
-  typeof navigator !== "undefined" &&
-  (/iPad|iPhone|iPod/.test(navigator.userAgent) ||
-    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1));
+  const currentIsImg =
+    (currentRef?.type || "").startsWith("image/");
+  const currentIsPdf2 =
+    (currentRef?.type || "").toLowerCase() === "application/pdf" ||
+    (currentRef?.name || "").toLowerCase().endsWith(".pdf");
 
   const goLeft  = () => { if (!canGallery || photos.length<2) return; setIdx((i)=> (i-1+photos.length)%photos.length); };
   const goRight = () => { if (!canGallery || photos.length<2) return; setIdx((i)=> (i+1)%photos.length); };
+
   useEffect(()=>{ if(!canGallery || photos.length<2) return;
     const onKey=(e)=>{ if(e.key==='ArrowLeft') goLeft(); if(e.key==='ArrowRight') goRight(); };
     window.addEventListener('keydown', onKey); return ()=>window.removeEventListener('keydown', onKey);
@@ -339,16 +402,19 @@ const isIOS =
       aria-label="Viewer"
     >
       <div
-  className="max-w-[1000px] w-full max-h-[95vh] bg-white rounded-lg overflow-hidden"
-  onClick={(e) => e.stopPropagation()}
-  onTouchStart={currentIsImg ? onTouchStart : undefined}
-  onTouchMove={currentIsImg ? onTouchMove : undefined}
-  onTouchEnd={currentIsImg ? onTouchEnd : undefined}
-  style={{ transform: drag.active ? `translateY(${Math.max(0, drag.dy)}px)` : undefined, transition: drag.active ? 'none' : 'transform 160ms ease-out' }}
->
-
-        {/* top grab strip */}
-        <div className="h-5 flex items-center justify-center bg-gray-50">
+        className="max-w-[1000px] w-full max-h-[95vh] bg-white rounded-lg overflow-hidden relative"
+        onClick={(e) => e.stopPropagation()}
+        // Images: attach swipe handlers here
+        onTouchStart={currentIsImg ? onTouchStart : undefined}
+        onTouchMove={currentIsImg ? onTouchMove : undefined}
+        onTouchEnd={currentIsImg ? onTouchEnd : undefined}
+        style={{
+          transform: drag.active ? `translateY(${Math.max(0, drag.dy)}px)` : undefined,
+          transition: drag.active ? 'none' : 'transform 160ms ease-out'
+        }}
+      >
+        {/* top grab strip (visible, but swipe anywhere works for PDFs via global listeners) */}
+        <div className="h-6 flex items-center justify-center bg-gray-50">
           <div className="w-12 h-1.5 rounded-full bg-gray-300" />
         </div>
 
@@ -368,42 +434,38 @@ const isIOS =
         <div className="relative">
           {currentUrl ? (
             currentIsImg ? (
-              <img src={currentUrl} alt={currentRef?.name || 'image'} className="w-full h-[85vh] object-contain select-none" draggable={false} />
-           ) : currentIsPdf ? (
-  isIOS ? (
-    // iOS: render with <object> and force letterbox "contain" fit
-    <object
-      data={currentUrl}
-      type="application/pdf"
-      className="w-full h-[85vh] bg-black/5"
-      // Keep proportions & let it letterbox instead of stretching
-      style={{
-        objectFit: 'contain',
-        // allow pinch zoom; Safari respects this for embedded viewer
-        touchAction: 'pan-y pinch-zoom'
-      }}
-    />
-  ) : (
-    // Non-iOS: iframe with page-fit hint; browser keeps proportions
-    <iframe
-      key={currentRef?.id || currentUrl}
-      src={`${currentUrl}#zoom=page-fit`}
-      title="Preview"
-      className="w-full h-[85vh] bg-black/5"
-    />
-  )
-) : (
-
-
+              <img
+                src={currentUrl}
+                alt={currentRef?.name || 'image'}
+                className="w-full h-[85vh] object-contain select-none"
+                draggable={false}
+              />
+            ) : currentIsPdf2 ? (
+              isIOS ? (
+                // iOS: <object> keeps proportions; user can pinch/scroll
+                <object
+                  data={currentUrl}
+                  type="application/pdf"
+                  className="w-full h-[85vh] bg-black/5"
+                  style={{ objectFit: 'contain', touchAction: 'pan-y pinch-zoom' }}
+                />
+              ) : (
+                // non-iOS: iframe with page-fit hint, proportional
+                <iframe
+                  key={currentRef?.id || currentUrl}
+                  src={`${currentUrl}#zoom=page-fit`}
+                  title="Preview"
+                  className="w-full h-[85vh] bg-black/5"
+                />
+              )
+            ) : (
               <div className="p-6 text-center text-sm text-gray-500">No inline preview available.</div>
             )
           ) : (
             <div className="p-6 text-center text-sm text-gray-500">Loading…</div>
           )}
 
-          {/* NOTE: removed "Open in new tab" link per request */}
-
-          {/* Left/right controls for multi-photos */}
+          {/* NOTE: intentionally no "Open in new tab" link */}
           {canGallery && photos.length > 1 && (
             <>
               <button className="absolute left-2 top-1/2 -translate-y-1/2 bg-white/80 hover:bg-white rounded-full w-8 h-8 flex items-center justify-center"
@@ -417,6 +479,7 @@ const isIOS =
     </div>
   );
 }
+
 function PillMenu({ label, options, onPick, strong }){
   const [open, setOpen] = useState(false);
   const [alignRight, setAlignRight] = useState(false);
