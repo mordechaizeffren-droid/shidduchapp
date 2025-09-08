@@ -293,49 +293,61 @@ function MiniPreview({ fileRef }) {
 
 // ===== Viewer (images + PDF pages, proportional, swipe) =====
 function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }) {
-  const blobUrl = useFilePreview(fileRef);
+  const firstUrl = useFilePreview(fileRef);
   const isImg = (fileRef?.type || '').startsWith('image/');
-  const isPdf = (fileRef?.type || '').toLowerCase() === 'application/pdf' || (fileRef?.name || '').toLowerCase().endsWith('.pdf');
+  const isPdf = (fileRef?.type || '').toLowerCase() === 'application/pdf' ||
+                (fileRef?.name || '').toLowerCase().endsWith('.pdf');
 
-  // image gallery index
+  // image carousel index
   const [idx, setIdx] = useState(startIndex);
   useEffect(() => setIdx(startIndex), [startIndex, fileRef?.id]);
 
-  // pdf page index + total pages (best effort)
+  // PDF state
   const [pdfPage, setPdfPage] = useState(1);
   const [pdfPages, setPdfPages] = useState(null);
-  const [pdfImg, setPdfImg] = useState('');     // data URL of rendered page
-  const [pdfErr, setPdfErr] = useState(false);
-  useEffect(() => { setPdfPage(1); setPdfPages(null); setPdfImg(''); setPdfErr(false); }, [fileRef?.id]);
+  const [pdfImg, setPdfImg] = useState('');     // rendered page (data URL)
+  const [pdfFallback, setPdfFallback] = useState(false);
+  const [pdfLoading, setPdfLoading] = useState(false);
+  useEffect(() => { setPdfPage(1); setPdfPages(null); setPdfImg(''); setPdfFallback(false); setPdfLoading(false); }, [fileRef?.id]);
 
-  // ----- Render current PDF page to <img> (reliable on iOS; keeps proportions)
+  // Render current PDF page to an image (reliable on iOS, preserves aspect)
   useEffect(() => {
     let cancelled = false;
     (async () => {
       if (!isPdf || !fileRef?.id) return;
+      setPdfLoading(true);
+      setPdfImg('');
+
+      // small watchdog so we never “hang” on loading
+      const watchdog = new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 2500));
+
       try {
-        setPdfImg('');
         const blob = await dbFiles.getItem(fileRef.id);
-        if (!blob) return;
+        if (!blob) throw new Error('no-blob');
         const ab = await blob.arrayBuffer();
 
-        // Use legacy ESM build; disable worker for cross-origin safety
-        const mod = await import('https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/legacy/build/pdf.min.mjs');
+        // Load legacy ESM build and *disable workers* (safer on iOS/CDN)
+        const mod = await Promise.race([
+          import('https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/legacy/build/pdf.min.mjs'),
+          watchdog
+        ]).catch(() => null);
+
+        if (!mod) throw new Error('import-failed');
+
         const pdfjs = mod.default || mod;
         if ('disableWorker' in pdfjs) pdfjs.disableWorker = true;
         if (pdfjs.GlobalWorkerOptions) pdfjs.GlobalWorkerOptions.workerSrc = undefined;
 
-        const loadingTask = pdfjs.getDocument({ data: ab });
-        const doc = await loadingTask.promise;
+        const doc = await pdfjs.getDocument({ data: ab }).promise;
         if (cancelled) { doc.destroy?.(); return; }
         setPdfPages(doc.numPages || null);
 
         const pageNum = Math.max(1, Math.min(pdfPage, doc.numPages || pdfPage));
         const page = await doc.getPage(pageNum);
 
-        // Scale to a reasonable height, respect devicePixelRatio for crispness
+        // scale respecting DPR for crispness, preserve proportions (object-contain later)
         const v1 = page.getViewport({ scale: 1 });
-        const targetH = 1400;                                   // CSS px
+        const targetH = 1400;                      // CSS px baseline
         const dpr = Math.max(1, window.devicePixelRatio || 1);
         const scale = Math.max(0.75, Math.min(2.5, (targetH / v1.height))) * dpr;
         const viewport = page.getViewport({ scale });
@@ -349,17 +361,23 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
         if (cancelled) { doc.destroy?.(); return; }
 
         setPdfImg(canvas.toDataURL('image/png'));
+        setPdfFallback(false);
+        setPdfLoading(false);
         doc.destroy?.();
       } catch {
-        setPdfErr(true);   // fall back to native viewer below if needed
+        if (!cancelled) {
+          setPdfFallback(true);  // graceful iframe fallback (still page-fit)
+          setPdfLoading(false);
+        }
       }
     })();
     return () => { cancelled = true; };
   }, [isPdf, fileRef?.id, pdfPage]);
 
-  // ----- Gestures: left/right to change, down to close
+  // Gestures: left/right to change, down to close
   const HORIZ = 60, VERT = 80, ANGLE = 15;
   const [drag, setDrag] = useState({ active:false, startX:0, startY:0, dx:0, dy:0 });
+
   const onTouchStart = (e) => {
     if (e.touches.length !== 1) return;
     const t = e.touches[0];
@@ -375,13 +393,14 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
     const { dx, dy } = drag;
     const ax = Math.abs(dx), ay = Math.abs(dy);
 
-    // down to close
+    // down → close
     if (ay - ax > ANGLE && dy > VERT) {
       setDrag({ active:false, startX:0, startY:0, dx:0, dy:0 });
       onClose?.();
       return;
     }
-    // left/right to move
+
+    // left/right → navigate
     if (ax - ay > ANGLE && ax > HORIZ) {
       if (isImg && photos.length > 1) {
         setIdx(i => (dx < 0 ? (i + 1) % photos.length : (i - 1 + photos.length) % photos.length));
@@ -409,7 +428,7 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
     return () => window.removeEventListener('keydown', onKey);
   }, [isImg, isPdf, photos.length, pdfPages, onClose]);
 
-  // current image ref (for the photo carousel)
+  // current photo url
   const currentPhotoRef = isImg && photos.length ? photos[idx] : null;
   const currentPhotoUrl = useFilePreview(currentPhotoRef || null);
 
@@ -452,22 +471,23 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
               className="w-full h-[90vh] object-contain select-none"
               draggable={false}
             />
-          ) : pdfErr && blobUrl ? (
-            // graceful fallback to native viewer if pdf.js failed
+          ) : pdfFallback && firstUrl ? (
             <iframe
-              key={`${blobUrl}#${pdfPage}`}
-              src={`${blobUrl}#page=${pdfPage}&view=FitH&zoom=page-fit`}
+              key={`${firstUrl}#${pdfPage}`}
+              src={`${firstUrl}#page=${pdfPage}&view=FitH&zoom=page-fit&toolbar=0&navpanes=0`}
               title="PDF"
               className="w-full h-[90vh] pointer-events-none"
             />
-          ) : (
+          ) : pdfLoading ? (
             <div className="p-6 text-center text-sm text-gray-500">Loading…</div>
+          ) : (
+            <div className="p-6 text-center text-sm text-gray-500">Unable to render PDF.</div>
           )
         ) : (
           <div className="p-6 text-center text-sm text-gray-500">No preview available.</div>
         )}
 
-        {/* Delete (photos only) */}
+        {/* Optional delete (photos only). If you don’t want it, don’t pass onDeletePhoto */}
         {isImg && typeof onDeletePhoto === 'function' && photos.length > 0 && (
           <button
             className="absolute top-3 right-3 bg-white/90 hover:bg-white rounded-full w-9 h-9 flex items-center justify-center border"
@@ -477,28 +497,6 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
           >
             ×
           </button>
-        )}
-
-        {/* Nav arrows when there’s something to navigate */}
-        {((isImg && photos.length > 1) || (isPdf && (pdfPages ? pdfPages > 1 : true))) && (
-          <>
-            <button
-              className="absolute left-2 top-1/2 -translate-y-1/2 bg-white/80 hover:bg-white rounded-full w-8 h-8 flex items-center justify-center"
-              onClick={() => {
-                if (isImg && photos.length > 1) setIdx(i => (i - 1 + photos.length) % photos.length);
-                else if (isPdf) setPdfPage(p => Math.max(1, p - 1));
-              }}
-              aria-label="Previous"
-            >‹</button>
-            <button
-              className="absolute right-2 top-1/2 -translate-y-1/2 bg-white/80 hover:bg-white rounded-full w-8 h-8 flex items-center justify-center"
-              onClick={() => {
-                if (isImg && photos.length > 1) setIdx(i => (i + 1) % photos.length);
-                else if (isPdf) setPdfPage(p => (pdfPages ? Math.min(pdfPages, p + 1) : p + 1));
-              }}
-              aria-label="Next"
-            >›</button>
-          </>
         )}
       </div>
     </div>
