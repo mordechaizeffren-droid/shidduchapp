@@ -309,52 +309,72 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose }) {
   useEffect(() => { setPdfPage(1); setPdfPages(null); setPdfImg(''); }, [fileRef?.id]);
 
   // Render current PDF page to an <img> (keeps proper proportions, allows gestures)
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      if (!isPdf || !fileRef?.id) return;
+useEffect(() => {
+  let cancelled = false;
 
-      try {
-        const blob = await dbFiles.getItem(fileRef.id);
-        if (!blob) return;
-        const ab = await blob.arrayBuffer();
+  (async () => {
+    if (!isPdf || !fileRef?.id) return;
 
-        // ESM build
-        const pdfjs = await import('https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.mjs');
+    setPdfImg(''); // show "Loading…" while we render
+
+    const blob = await dbFiles.getItem(fileRef.id);
+    if (!blob) return;
+    const ab = await blob.arrayBuffer();
+
+    // Try legacy ESM + module worker first (best performance)
+    const loadAndRender = async (useWorker = true) => {
+      const pdfjs = await import(
+        'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/legacy/build/pdf.mjs'
+      );
+
+      // Configure worker (or disable it)
+      if (useWorker) {
         pdfjs.GlobalWorkerOptions.workerSrc =
-          'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.mjs';
-
-        const doc = await pdfjs.getDocument({ data: ab }).promise;
-        if (cancelled) { doc.destroy?.(); return; }
-        setPdfPages(doc.numPages || null);
-
-        // Clamp page
-        const pageNum = Math.max(1, Math.min(pdfPage, doc.numPages || pdfPage));
-        const page = await doc.getPage(pageNum);
-
-        // Choose a scale that looks crisp but not huge; height ~ 1400px @ DPR
-        const v1 = page.getViewport({ scale: 1 });
-        const targetH = 1400; // px in CSS pixels
-        const scale = Math.max(0.75, Math.min(2.5, (targetH / v1.height))) * (window.devicePixelRatio || 1);
-        const viewport = page.getViewport({ scale });
-
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d', { alpha: false });
-        canvas.width = Math.floor(viewport.width);
-        canvas.height = Math.floor(viewport.height);
-
-        await page.render({ canvasContext: ctx, viewport }).promise;
-        if (cancelled) { doc.destroy?.(); return; }
-
-        setPdfImg(canvas.toDataURL('image/png'));
-        doc.destroy?.();
-      } catch {
-        // ignore; we'll just show a loading/fallback
+          'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/legacy/build/pdf.worker.mjs';
+        // Some environments still need this:
+        if ('disableWorker' in pdfjs) pdfjs.disableWorker = false;
+      } else {
+        // Fallback: render on main thread (slower, but reliable)
+        if ('disableWorker' in pdfjs) pdfjs.disableWorker = true;
+        pdfjs.GlobalWorkerOptions.workerSrc = undefined;
       }
-    })();
 
-    return () => { cancelled = true; };
-  }, [isPdf, fileRef?.id, pdfPage]);
+      const doc = await pdfjs.getDocument({ data: ab }).promise;
+      if (cancelled) { doc.destroy?.(); return; }
+      setPdfPages(doc.numPages || null);
+
+      const pageNum = Math.max(1, Math.min(pdfPage, doc.numPages || pdfPage));
+      const page = await doc.getPage(pageNum);
+
+      // Render to canvas with a crisp but bounded scale
+      const v1 = page.getViewport({ scale: 1 });
+      const targetH = 1400; // CSS px; keeps proportions, not squished
+      const dpr = Math.max(1, window.devicePixelRatio || 1);
+      const scale = Math.max(0.75, Math.min(2.5, (targetH / v1.height))) * dpr;
+      const viewport = page.getViewport({ scale });
+
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d', { alpha: false });
+      canvas.width = Math.floor(viewport.width);
+      canvas.height = Math.floor(viewport.height);
+
+      await page.render({ canvasContext: ctx, viewport }).promise;
+      if (cancelled) { doc.destroy?.(); return; }
+
+      setPdfImg(canvas.toDataURL('image/png'));
+      doc.destroy?.();
+    };
+
+    try {
+      await loadAndRender(true);   // try with worker
+    } catch {
+      try { await loadAndRender(false); } catch {} // fallback without worker
+    }
+  })();
+
+  return () => { cancelled = true; };
+}, [isPdf, fileRef?.id, pdfPage]);
+
 
   // Which image ref are we on (for photo galleries)
   const currentRef = isImg && photos.length ? photos[idx] : fileRef;
