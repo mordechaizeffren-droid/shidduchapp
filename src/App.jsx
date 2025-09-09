@@ -293,6 +293,153 @@ function LongPressShare({ fileRef, onDelete, children, delay = 500 }) {
     </>
   );
 }
+// ===== PillMenu (simple) =====
+function PillMenu({ label, options = [], onPick }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="relative inline-block">
+      <button
+        type="button"
+        className="px-3 py-1 rounded-full text-sm font-medium border bg-white"
+        onClick={() => setOpen((o) => !o)}
+      >
+        {label || "Select"}
+      </button>
+      {open && (
+        <div className="absolute z-50 mt-1 w-44 rounded border bg-white shadow">
+          {options.map((opt) => (
+            <button
+              key={opt}
+              type="button"
+              className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm"
+              onClick={() => {
+                onPick?.(opt);
+                setOpen(false);
+              }}
+            >
+              {opt}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ===== AddDropdown (files / paste triggers) =====
+function AddDropdown({ disabled = false }) {
+  const [open, setOpen] = useState(false);
+  const triggerFiles = () => {
+    if (disabled) { alert("Add a profile first."); return; }
+    window.dispatchEvent(new Event("open-quick-add"));
+    setOpen(false);
+  };
+  const triggerPaste = () => {
+    if (disabled) { alert("Add a profile first."); return; }
+    window.dispatchEvent(new Event("open-paste-add"));
+    setOpen(false);
+  };
+  return (
+    <div className="relative inline-block">
+      <button
+        type="button"
+        aria-label="Add"
+        title="Add"
+        className={`px-2 py-1 rounded border ${disabled ? "opacity-40" : ""}`}
+        onClick={() => !disabled && setOpen((o) => !o)}
+      >
+        +
+      </button>
+      {open && (
+        <div className="absolute z-50 mt-1 w-44 rounded border bg-white shadow right-0">
+          <button className="w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center gap-2" onClick={triggerFiles}>
+            <span>📂</span> <span>From files</span>
+          </button>
+          <button className="w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center gap-2" onClick={triggerPaste}>
+            <span>📋</span> <span>Paste</span>
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ===== SettingsFab (Export / Import / Sync) =====
+function SettingsFab({ onExport, onImport, onOpenSync }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="fixed bottom-4 right-4 z-50 flex flex-col items-end">
+      {open && (
+        <div className="mb-2 w-48 rounded border bg-white shadow">
+          <button className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm" onClick={() => { onExport?.(); setOpen(false); }}>Export</button>
+          <button className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm" onClick={() => { onImport?.(); setOpen(false); }}>Import</button>
+          <div className="my-1 border-t" />
+          <button className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm" onClick={() => { onOpenSync?.(); setOpen(false); }}>Sync settings…</button>
+        </div>
+      )}
+      <button
+        type="button"
+        aria-label="Settings"
+        className="w-11 h-11 rounded-full border bg-white shadow-sm flex items-center justify-center"
+        onClick={() => setOpen((o) => !o)}
+      >
+        ⚙️
+      </button>
+    </div>
+  );
+}
+
+// ===== SyncPanel (modal) =====
+function SyncPanel({ open, initial, onSave, onClear, onClose }) {
+  const [cfg, setCfg] = useState(initial?.config || "");
+  const [room, setRoom] = useState(initial?.room || "");
+  useEffect(() => { setCfg(initial?.config || ""); setRoom(initial?.room || ""); }, [initial, open]);
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-[1800] bg-black/40 flex items-end md:items-center md:justify-center" onClick={onClose}>
+      <div className="bg-white w-full md:w-[28rem] rounded-t-2xl md:rounded-2xl p-4 shadow-lg" onClick={(e)=>e.stopPropagation()}>
+        <div className="text-lg font-semibold mb-2">Sync (optional)</div>
+        <p className="text-xs text-gray-500 mb-3">Paste the config token and enter a room name to enable sync between devices.</p>
+        <div className="space-y-2">
+          <div>
+            <div className="text-xs mb-1">Config token</div>
+            <input className="border rounded w-full px-2 py-1 text-sm" value={cfg} onChange={(e)=>setCfg(e.target.value)} placeholder="..." />
+          </div>
+          <div>
+            <div className="text-xs mb-1">Room</div>
+            <input className="border rounded w-full px-2 py-1 text-sm" value={room} onChange={(e)=>setRoom(e.target.value)} placeholder="..." />
+          </div>
+        </div>
+        <div className="mt-3 flex gap-2 justify-end">
+          <button className="px-3 py-1 rounded border" onClick={onClose}>Close</button>
+          <button className="px-3 py-1 rounded border" onClick={()=>{ onClear?.(); onClose(); }}>Clear</button>
+          <button className="px-3 py-1 rounded border bg-black text-white" onClick={()=>{ onSave?.({ config: cfg, room }); onClose(); }}>Save</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ===== Viewer (very simple) =====
+function Viewer({ fileRef, photos = [], startIndex = 0, onClose }) {
+  const ref = fileRef || photos[startIndex] || null;
+  const url = useFilePreview(ref);
+  const type = (ref?.type || "").toLowerCase();
+  const isImg = type.startsWith("image/");
+  const isPdf = type === "application/pdf" || (ref?.name || "").toLowerCase().endsWith(".pdf");
+
+  return (
+    <div className="fixed inset-0 z-[3000] bg-black/80 flex items-center justify-center p-4" onClick={onClose} role="dialog">
+      <div className="max-w-[1000px] w-full max-h-[95vh] bg-white rounded-lg overflow-hidden relative" onClick={(e)=>e.stopPropagation()}>
+        {isImg && url && <img src={url} alt={ref?.name || "image"} className="w-full h-[90vh] object-contain" />}
+        {isPdf && url && <iframe src={`${url}#view=FitH&zoom=page-fit`} title="PDF" className="w-full h-[90vh]"/>}
+        {!url && <div className="p-6 text-center text-sm text-gray-500">Loading…</div>}
+        <button className="absolute top-3 right-3 bg-white rounded-full w-9 h-9 border" onClick={onClose} title="Close">×</button>
+      </div>
+    </div>
+  );
+}
+
 // ===== Prospects (collapsed list + full-page editor) =====
 function Prospects({
   prospects,
