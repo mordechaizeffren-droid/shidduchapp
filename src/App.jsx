@@ -977,7 +977,8 @@ function Prospects({
   );
 }
 // --- Long-press wrapper that calls shareRef(ref) (falls back to downloadRef) ---
-function LongPressShare({ fileRef, children, delay = 500 }) {
+function LongPressShare({ fileRef, onDelete, children, delay = 500 }) {
+  const [menu, setMenu] = React.useState({ open: false, x: 0, y: 0, file: null });
   const tRef = React.useRef(null);
   const movedRef = React.useRef(false);
 
@@ -987,9 +988,9 @@ function LongPressShare({ fileRef, children, delay = 500 }) {
     movedRef.current = false;
     const sx = clientX, sy = clientY;
     clear();
-    tRef.current = setTimeout(async () => {
+    tRef.current = setTimeout(() => {
       if (!movedRef.current && fileRef) {
-        try { await shareRef(fileRef); } catch { try { await downloadRef(fileRef); } catch {} }
+        setMenu({ open: true, x: clientX, y: clientY, file: fileRef });
       }
     }, delay);
 
@@ -1000,27 +1001,65 @@ function LongPressShare({ fileRef, children, delay = 500 }) {
     };
     const stop = () => {
       clear();
-      window.removeEventListener('mousemove', move, true);
-      window.removeEventListener('mouseup', stop, true);
-      window.removeEventListener('touchmove', move, true);
-      window.removeEventListener('touchend', stop, true);
-      window.removeEventListener('touchcancel', stop, true);
+      window.removeEventListener("mousemove", move, true);
+      window.removeEventListener("mouseup", stop, true);
+      window.removeEventListener("touchmove", move, true);
+      window.removeEventListener("touchend", stop, true);
+      window.removeEventListener("touchcancel", stop, true);
     };
-
-    window.addEventListener('mousemove', move, true);
-    window.addEventListener('mouseup', stop, true);
-    window.addEventListener('touchmove', move, true);
-    window.addEventListener('touchend', stop, true);
-    window.addEventListener('touchcancel', stop, true);
+    window.addEventListener("mousemove", move, true);
+    window.addEventListener("mouseup", stop, true);
+    window.addEventListener("touchmove", move, true);
+    window.addEventListener("touchend", stop, true);
+    window.addEventListener("touchcancel", stop, true);
   };
 
   return (
-    <div
-      onMouseDown={(e)=>start(e.clientX, e.clientY)}
-      onTouchStart={(e)=>start(e.touches[0].clientX, e.touches[0].clientY)}
-    >
-      {children}
-    </div>
+    <>
+      <div
+        onMouseDown={(e) => start(e.clientX, e.clientY)}
+        onTouchStart={(e) => start(e.touches[0].clientX, e.touches[0].clientY)}
+      >
+        {children}
+      </div>
+
+      {menu.open && (
+        <div
+          className="fixed z-[5000] bg-white border rounded shadow text-sm"
+          style={{ left: menu.x, top: menu.y }}
+        >
+          <button
+            className="block w-full px-3 py-2 hover:bg-gray-100"
+            onClick={() => { shareRef(menu.file); setMenu({ ...menu, open: false }); }}
+          >
+            Share
+          </button>
+          <button
+            className="block w-full px-3 py-2 hover:bg-gray-100"
+            onClick={() => { downloadRef(menu.file); setMenu({ ...menu, open: false }); }}
+          >
+            Save
+          </button>
+          {onDelete && (
+            <button
+              className="block w-full px-3 py-2 text-rose-600 hover:bg-rose-50"
+              onClick={async () => {
+                await onDelete(menu.file);
+                setMenu({ ...menu, open: false });
+              }}
+            >
+              Delete
+            </button>
+          )}
+          <button
+            className="block w-full px-3 py-2 text-gray-500 hover:bg-gray-50"
+            onClick={() => setMenu({ ...menu, open: false })}
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -1135,124 +1174,123 @@ function FullProspectEditor({ prospect, allProfiles, onChange, onClose, onDelete
               <TrustSelect value={p.sourceTrust||''} onChange={(v)=>onChange({sourceTrust:v})} />
             </div>
           </div>
-{/* Resume & Photos — long-press to share/save (no share/download buttons) */}
-<div className="grid grid-cols-2 gap-6 w-full items-start">
-  {/* Resume */}
-  <div
-    onDrop={async (e) => {
-      e.preventDefault();
-      const f = e.dataTransfer?.files?.[0];
-      if (f) { const ref = await attachFile(f); onChange({ resume: ref }); }
-    }}
-    onDragOver={(e) => e.preventDefault()}
-  >
-    <div className="text-sm font-medium mb-1">Resume</div>
+{/* Resume — simplified (no Share/Download; long-press to share/save/delete) */}
+<div>
+  <div className="text-xs mb-1">Resume</div>
 
-    {p.resume ? (
-      <LongPressShare fileRef={p.resume}>
-        <div
-          className="w-44 h-28 rounded-lg bg-white border overflow-hidden cursor-pointer"
-          onClick={() => { setViewerFile(p.resume); setViewerPhotos([]); setViewerIndex(0); }}
-          title="Tap to preview • long-press to share/save"
-        >
-          <MiniPreview fileRef={p.resume} />
+  {selected.resume ? (
+    <LongPressShare
+      fileRef={selected.resume}
+      onDelete={async () => {
+        const ok = await askConfirm(); if (!ok) return;
+        if (selected.resume) await deleteFileRef(selected.resume);
+        updateProfile(selected.id, { resume: null });
+      }}
+    >
+      <div
+        className="group cursor-pointer inline-block"
+        onClick={() => { setViewerFile(selected.resume); setViewerPhotos([]); setViewerIndex(0); }}
+        title="Tap to view • long-press to share/save/delete"
+      >
+        <div className="w-40">
+          <MiniPreview fileRef={selected.resume} />
         </div>
-      </LongPressShare>
+      </div>
+    </LongPressShare>
+  ) : (
+    <button
+      type="button"
+      onClick={() => document.getElementById(`profile-resume-${selected.id}`)?.click()}
+      className="h-28 w-40 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 shadow-sm flex flex-col items-center justify-center"
+    >
+      <div className="text-3xl leading-none text-gray-400">+</div>
+      <div className="text-xs text-gray-500 mt-1">Add resume</div>
+      <input
+        id={`profile-resume-${selected.id}`}
+        type="file"
+        accept="*/*"
+        className="hidden"
+        onChange={async (e) => {
+          const f = e.target.files?.[0];
+          if (f) {
+            const ref = await attachFile(f);
+            updateProfile(selected.id, { resume: ref });
+          }
+          e.target.value = "";
+        }}
+      />
+    </button>
+  )}
+</div>
+
+{/* Photos (no share/download; long-press to share/save/delete) */}
+<div>
+  <div className="text-xs mb-1">Photos</div>
+
+  <div className="relative inline-block">
+    {selected.photos?.[1] && (
+      <div className="absolute left-2 top-2 w-40 h-28 rounded-md bg-white border overflow-hidden opacity-70 pointer-events-none -z-0">
+        <MiniPreview fileRef={selected.photos[1]} />
+      </div>
+    )}
+
+    {selected.photos?.[0] ? (
+      <div className="relative z-10">
+        <LongPressShare
+          fileRef={selected.photos[0]}
+          onDelete={async () => {
+            const ok = await askConfirm(); if (!ok) return;
+            const next = (selected.photos || []).slice(1);
+            await deleteFileRef(selected.photos[0]);
+            updateProfile(selected.id, { photos: next });
+          }}
+        >
+          <div
+            className="w-40 h-28 rounded-md bg-white border overflow-hidden cursor-pointer"
+            onClick={()=>{ setViewerPhotos(selected.photos||[]); setViewerIndex(0); setViewerFile(selected.photos?.[0]); }}
+            title="Tap to preview • long-press to share/save/delete"
+          >
+            <MiniPreview fileRef={selected.photos[0]} />
+          </div>
+        </LongPressShare>
+
+        {/* small add button stays */}
+        <button
+          type="button"
+          onClick={()=>document.getElementById(`profile-photos-${selected.id}`)?.click()}
+          className="absolute -bottom-3 -right-3 z-20 w-8 h-8 rounded-full border bg-white shadow flex items-center justify-center"
+          title="Add photo"
+        >+</button>
+      </div>
     ) : (
       <button
         type="button"
-        onClick={() => document.getElementById(`fs-resume-${p.id}`)?.click()}
-        className="h-28 w-44 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 flex flex-col items-center justify-center"
+        onClick={()=>document.getElementById(`profile-photos-${selected.id}`)?.click()}
+        className="h-28 w-40 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 shadow-sm flex flex-col items-center justify-center"
       >
         <div className="text-3xl leading-none text-gray-400">+</div>
-        <div className="text-xs text-gray-500 mt-1">Add resume</div>
-        <input
-          id={`fs-resume-${p.id}`}
-          type="file"
-          accept="*/*"
-          className="hidden"
-          onChange={async (e) => { const f = e.target.files?.[0]; if (f) { const ref = await attachFile(f); onChange({ resume: ref }); } e.target.value=''; }}
-        />
+        <div className="text-[11px] text-gray-500 mt-1">Add photos</div>
       </button>
     )}
-  </div>
-
-  {/* Photos */}
-  <div
-    onDrop={async (e) => {
-      e.preventDefault();
-      const files = Array.from(e.dataTransfer?.files || []).filter(f => (f.type || '').startsWith('image/'));
-      if (files.length) {
-        const refs = [];
-        for (const f of files) refs.push(await attachFile(f));
-        onChange({ photos: [ ...(p.photos || []), ...refs ] });
-      }
-    }}
-    onDragOver={(e) => e.preventDefault()}
-  >
-    <div className="text-sm font-medium mb-1">Photos</div>
-
-    <div className="relative inline-block">
-      {p.photos?.[1] && (
-        <div className="absolute left-2 top-2 w-44 h-28 rounded-lg bg-white border overflow-hidden opacity-70 pointer-events-none -z-0">
-          <MiniPreview fileRef={p.photos[1]} />
-        </div>
-      )}
-
-      {p.photos?.[0] ? (
-        <div className="relative z-10">
-          <LongPressShare fileRef={p.photos[0]}>
-            <div
-              className="w-44 h-28 rounded-lg bg-white border overflow-hidden cursor-pointer"
-              onClick={() => { setViewerPhotos(p.photos || []); setViewerIndex(0); setViewerFile(p.photos?.[0]); }}
-              title="Tap to preview • long-press to share/save"
-            >
-              <MiniPreview fileRef={p.photos[0]} />
-            </div>
-          </LongPressShare>
-
-          {/* small add button stays */}
-          <button
-            type="button"
-            onClick={()=>document.getElementById(`fs-photos-${p.id}`)?.click()}
-            className="absolute bottom-2 right-2 z-20 w-9 h-9 rounded-full border bg-white shadow flex items-center justify-center"
-            title="Add photo"
-            aria-label="Add photo"
-          >
-            +
-          </button>
-        </div>
-      ) : (
-        <button
-          type="button"
-          onClick={()=>document.getElementById(`fs-photos-${p.id}`)?.click()}
-          className="h-28 w-44 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 flex flex-col items-center justify-center"
-        >
-          <div className="text-3xl leading-none text-gray-400">+</div>
-          <div className="text-[11px] text-gray-500 mt-1">Add photos</div>
-        </button>
-      )}
-      <input
-        id={`fs-photos-${p.id}`}
-        type="file"
-        accept="image/*"
-        multiple
-        className="hidden"
-        onChange={async (e) => {
-          const fs = Array.from(e.target.files || []);
-          if (fs.length) {
-            const refs = [];
-            for (const f of fs) refs.push(await attachFile(f));
-            onChange({ photos: [ ...(p.photos || []), ...refs ] });
-          }
-          e.target.value = '';
-        }}
-      />
-    </div>
+    <input
+      id={`profile-photos-${selected.id}`}
+      type="file"
+      accept="image/*"
+      multiple
+      className="hidden"
+      onChange={async (e) => {
+        const fs = Array.from(e.target.files || []);
+        if (fs.length) {
+          const refs = [];
+          for (const f of fs) refs.push(await attachFile(f));
+          updateProfile(selected.id, { photos: [ ...(selected.photos || []), ...refs ] });
+        }
+        e.target.value = "";
+      }}
+    />
   </div>
 </div>
 
-         
           {/* Notes */}
           <div className="mt-2">
             <div className="text-sm font-medium">Notes</div>
@@ -1441,23 +1479,6 @@ function MyProfile({ profile, saveProfile }){
           </div>
         </div>
       </LongPressShare>
-
-      {/* Keep only Delete */}
-      <div className="flex items-center gap-2 mt-2">
-        <IconBtn
-          ariaLabel="Delete"
-          label="Delete"
-          onClick={async (e) => {
-            e.stopPropagation();
-            const ok = await askConfirm(); if (!ok) return;
-            if (selected.resume) await deleteFileRef(selected.resume);
-            updateProfile(selected.id, { resume: null });
-          }}
-          className="border-rose-300 text-rose-700 hover:bg-rose-50"
-        >
-          <IconX />
-        </IconBtn>
-      </div>
     </>
   ) : (
     <button
