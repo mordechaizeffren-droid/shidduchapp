@@ -1174,39 +1174,43 @@ function FullProspectEditor({ prospect, allProfiles, onChange, onClose, onDelete
               <TrustSelect value={p.sourceTrust||''} onChange={(v)=>onChange({sourceTrust:v})} />
             </div>
           </div>
-{/* Resume — simplified (no Share/Download; long-press to share/save/delete) */}
+{/* Resume — long-press to Share / Save / Delete */}
 <div>
   <div className="text-xs mb-1">Resume</div>
 
-  {selected.resume ? (
+  {p.resume ? (
     <LongPressShare
-      fileRef={selected.resume}
+      fileRef={p.resume}
       onDelete={async () => {
         const ok = await askConfirm(); if (!ok) return;
-        if (selected.resume) await deleteFileRef(selected.resume);
-        updateProfile(selected.id, { resume: null });
+        if (p.resume) await deleteFileRef(p.resume);
+        onChange({ resume: null });
       }}
     >
       <div
         className="group cursor-pointer inline-block"
-        onClick={() => { setViewerFile(selected.resume); setViewerPhotos([]); setViewerIndex(0); }}
-        title="Tap to view • long-press to share/save/delete"
+        onClick={() => {
+          setViewerFile(p.resume);
+          setViewerPhotos([]);
+          setViewerIndex(0);
+        }}
+        title="Tap to view • long-press for menu"
       >
         <div className="w-40">
-          <MiniPreview fileRef={selected.resume} />
+          <MiniPreview fileRef={p.resume} />
         </div>
       </div>
     </LongPressShare>
   ) : (
     <button
       type="button"
-      onClick={() => document.getElementById(`profile-resume-${selected.id}`)?.click()}
+      onClick={() => document.getElementById(`prospect-resume-${p.id}`)?.click()}
       className="h-28 w-40 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 shadow-sm flex flex-col items-center justify-center"
     >
       <div className="text-3xl leading-none text-gray-400">+</div>
       <div className="text-xs text-gray-500 mt-1">Add resume</div>
       <input
-        id={`profile-resume-${selected.id}`}
+        id={`prospect-resume-${p.id}`}
         type="file"
         accept="*/*"
         className="hidden"
@@ -1214,7 +1218,7 @@ function FullProspectEditor({ prospect, allProfiles, onChange, onClose, onDelete
           const f = e.target.files?.[0];
           if (f) {
             const ref = await attachFile(f);
-            updateProfile(selected.id, { resume: ref });
+            onChange({ resume: ref });
           }
           e.target.value = "";
         }}
@@ -1222,50 +1226,55 @@ function FullProspectEditor({ prospect, allProfiles, onChange, onClose, onDelete
     </button>
   )}
 </div>
-
-{/* Photos (no share/download; long-press to share/save/delete) */}
+{/* Photos — long-press to Share / Save / Delete */}
 <div>
   <div className="text-xs mb-1">Photos</div>
 
   <div className="relative inline-block">
-    {selected.photos?.[1] && (
+    {p.photos?.[1] && (
       <div className="absolute left-2 top-2 w-40 h-28 rounded-md bg-white border overflow-hidden opacity-70 pointer-events-none -z-0">
-        <MiniPreview fileRef={selected.photos[1]} />
+        <MiniPreview fileRef={p.photos[1]} />
       </div>
     )}
 
-    {selected.photos?.[0] ? (
+    {p.photos?.[0] ? (
       <div className="relative z-10">
         <LongPressShare
-          fileRef={selected.photos[0]}
+          fileRef={p.photos[0]}
           onDelete={async () => {
             const ok = await askConfirm(); if (!ok) return;
-            const next = (selected.photos || []).slice(1);
-            await deleteFileRef(selected.photos[0]);
-            updateProfile(selected.id, { photos: next });
+            const next = (p.photos || []).slice(1);
+            await deleteFileRef(p.photos[0]);
+            onChange({ photos: next });
           }}
         >
           <div
             className="w-40 h-28 rounded-md bg-white border overflow-hidden cursor-pointer"
-            onClick={()=>{ setViewerPhotos(selected.photos||[]); setViewerIndex(0); setViewerFile(selected.photos?.[0]); }}
-            title="Tap to preview • long-press to share/save/delete"
+            onClick={() => {
+              setViewerPhotos(p.photos || []);
+              setViewerIndex(0);
+              setViewerFile(p.photos?.[0]);
+            }}
+            title="Tap to preview • long-press for menu"
           >
-            <MiniPreview fileRef={selected.photos[0]} />
+            <MiniPreview fileRef={p.photos[0]} />
           </div>
         </LongPressShare>
 
-        {/* small add button stays */}
+        {/* small add button */}
         <button
           type="button"
-          onClick={()=>document.getElementById(`profile-photos-${selected.id}`)?.click()}
+          onClick={() => document.getElementById(`prospect-photos-${p.id}`)?.click()}
           className="absolute -bottom-3 -right-3 z-20 w-8 h-8 rounded-full border bg-white shadow flex items-center justify-center"
           title="Add photo"
-        >+</button>
+        >
+          +
+        </button>
       </div>
     ) : (
       <button
         type="button"
-        onClick={()=>document.getElementById(`profile-photos-${selected.id}`)?.click()}
+        onClick={() => document.getElementById(`prospect-photos-${p.id}`)?.click()}
         className="h-28 w-40 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 shadow-sm flex flex-col items-center justify-center"
       >
         <div className="text-3xl leading-none text-gray-400">+</div>
@@ -1273,7 +1282,7 @@ function FullProspectEditor({ prospect, allProfiles, onChange, onClose, onDelete
       </button>
     )}
     <input
-      id={`profile-photos-${selected.id}`}
+      id={`prospect-photos-${p.id}`}
       type="file"
       accept="image/*"
       multiple
@@ -1283,7 +1292,7 @@ function FullProspectEditor({ prospect, allProfiles, onChange, onClose, onDelete
         if (fs.length) {
           const refs = [];
           for (const f of fs) refs.push(await attachFile(f));
-          updateProfile(selected.id, { photos: [ ...(selected.photos || []), ...refs ] });
+          onChange({ photos: [...(p.photos || []), ...refs] });
         }
         e.target.value = "";
       }}
