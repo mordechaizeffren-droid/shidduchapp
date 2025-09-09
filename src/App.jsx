@@ -243,7 +243,7 @@ function useConfirm() {
 
   useEffect(()=>{
     const onKey=(e)=>{ if(!state.open) return; if(e.key==='Escape'){ state.resolve(false); setState({open:false, resolve:null}); } };
-    window.addEventListener('keydown', onKey); 
+    window.addEventListener('keydown', onKey);
     return ()=>window.removeEventListener('keydown', onKey);
   },[state]);
 
@@ -976,13 +976,8 @@ function Prospects({
     </div>
   );
 }
-
-/* ===== Full-screen editor component =====
-   - Name is editable here
-   - Swipe down (or Esc) to close
-*/
-// ===== Helpers: LongPress + ActionSheet =====
-function LongPressRegion({ children, onLongPress, delay = 500 }) {
+// --- Long-press wrapper that calls shareRef(ref) (falls back to downloadRef) ---
+function LongPressShare({ fileRef, children, delay = 500 }) {
   const tRef = React.useRef(null);
   const movedRef = React.useRef(false);
 
@@ -992,8 +987,10 @@ function LongPressRegion({ children, onLongPress, delay = 500 }) {
     movedRef.current = false;
     const sx = clientX, sy = clientY;
     clear();
-    tRef.current = setTimeout(() => {
-      if (!movedRef.current) onLongPress?.();
+    tRef.current = setTimeout(async () => {
+      if (!movedRef.current && fileRef) {
+        try { await shareRef(fileRef); } catch { try { await downloadRef(fileRef); } catch {} }
+      }
     }, delay);
 
     const move = (e) => {
@@ -1027,188 +1024,294 @@ function LongPressRegion({ children, onLongPress, delay = 500 }) {
   );
 }
 
-function ActionSheet({ open, onClose, onShare, onDownload }) {
-  if (!open) return null;
-  return (
-    <div className="fixed inset-0 z-[5000] bg-black/30" onClick={onClose}>
-      <div
-        className="absolute bottom-0 left-0 right-0 bg-white rounded-t-2xl p-2 shadow-xl"
-        onClick={(e)=>e.stopPropagation()}
-      >
-        <button className="w-full text-left px-3 py-3 hover:bg-gray-50" onClick={()=>{ onShare?.(); onClose?.(); }}>
-          Share
-        </button>
-        <button className="w-full text-left px-3 py-3 hover:bg-gray-50" onClick={()=>{ onDownload?.(); onClose?.(); }}>
-          Download
-        </button>
-        <div className="mt-1">
-          <button className="w-full text-center px-3 py-3 border-t" onClick={onClose}>Cancel</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ===== FullProspectEditor (long-press enabled) =====
+/* ===== Full-screen editor component =====
+   - Name is editable here
+   - Swipe down (or Esc) to close
+*/
 function FullProspectEditor({ prospect, allProfiles, onChange, onClose, onDelete }) {
   const p = prospect || {};
   const [viewerFile, setViewerFile] = React.useState(null);
   const [viewerPhotos, setViewerPhotos] = React.useState([]);
   const [viewerIndex, setViewerIndex] = React.useState(0);
   const { ask: askConfirm, Confirm } = useConfirm();
-  const [sheet, setSheet] = React.useState({ open:false, ref:null });
 
-  // swipe-down + esc close handlers unchanged...
+  // swipe-down to close
+  const [drag, setDrag] = React.useState({ active:false, startX:0, startY:0, dx:0, dy:0 });
+  const HORIZ = 60, VERT = 80, ANGLE = 15;
+
+  const onTouchStart = (e) => {
+    if (e.touches.length !== 1) return;
+    const t = e.touches[0];
+    setDrag({ active:true, startX:t.clientX, startY:t.clientY, dx:0, dy:0 });
+  };
+  const onTouchMove = (e) => {
+    if (!drag.active || e.touches.length !== 1) return;
+    const t = e.touches[0];
+    setDrag(d => ({ ...d, dx: t.clientX - d.startX, dy: t.clientY - d.startY }));
+  };
+  const onTouchEnd = () => {
+    if (!drag.active) return;
+    const { dx, dy } = drag;
+    const ax = Math.abs(dx), ay = Math.abs(dy);
+    if (ay - ax > ANGLE && dy > VERT) onClose?.();
+    setDrag({ active:false, startX:0, startY:0, dx:0, dy:0 });
+  };
+
+  React.useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose?.(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const addPhotos = async (files) => {
+    const refs = [];
+    for (const f of Array.from(files||[])) refs.push(await attachFile(f));
+    onChange({ photos:[...(p.photos||[]), ...refs] });
+  };
+
+  const hasTwo = (() => {
+    let c=0; if (p.resume) c++; if ((p.photos||[]).length) c++; if ((p.notes||'').trim()) c++; return c>=2;
+  })();
 
   return (
-    <div className="fixed inset-0 z-[3500] bg-white flex items-start justify-center p-0">
+    <div
+      className="fixed inset-0 z-[3500] bg-white flex items-start justify-center p-0"
+      role="dialog"
+      aria-label="Edit prospect"
+      onTouchStart={onTouchStart}
+      onTouchMove={onTouchMove}
+      onTouchEnd={onTouchEnd}
+      style={{
+        transform: drag.active && drag.dy > 0 ? `translateY(${Math.max(0, drag.dy)}px)` : undefined,
+        transition: drag.active ? 'none' : 'transform 160ms ease-out',
+      }}
+    >
       <div className="w-full max-w-3xl mx-auto">
-        {/* header … keep as in your version */}
-
-        <div className="p-3 space-y-3">
-          <div className="grid grid-cols-2 gap-6 w-full items-start">
-            {/* Resume */}
-            <div>
-              <div className="text-sm font-medium mb-1">Resume</div>
-              {p.resume ? (
-                <div className="relative inline-block">
-                  <LongPressRegion onLongPress={()=>setSheet({open:true,ref:p.resume})}>
-                    <div
-                      className="w-44 h-28 rounded-lg bg-white border overflow-hidden cursor-pointer"
-                      onClick={()=>{ setViewerFile(p.resume); setViewerPhotos([]); setViewerIndex(0); }}
-                    >
-                      <MiniPreview fileRef={p.resume} />
-                    </div>
-                  </LongPressRegion>
-                  <IconBtn
-                    ariaLabel="Delete resume"
-                    label="Delete"
-                    onClick={async (e)=>{ e.stopPropagation(); const ok=await askConfirm(); if(!ok) return; try{ if(p.resume) await deleteFileRef(p.resume);}catch{} onChange({resume:null}); }}
-                    className="absolute -top-3 -right-3 z-20 border-rose-300 text-rose-700 bg-white shadow"
-                  >
-                    <span className="text-lg leading-none">×</span>
-                  </IconBtn>
-                </div>
-              ) : /* add resume tile unchanged */ null}
+        {/* grab handle + header */}
+        <div className="sticky top-0 z-10 bg-white/95 backdrop-blur border-b">
+          <div className="h-5 flex items-center justify-center">
+            <div className="w-10 h-1.5 rounded-full bg-gray-300 mt-2" />
+          </div>
+          <div className="px-3 pb-2 flex items-center gap-2">
+            <EditableText
+              value={p.fullName || ''}
+              placeholder="name..."
+              onChange={(v)=>onChange({ fullName: v })}
+              className="font-medium text-base truncate"
+              inputClass="font-medium border rounded px-2 py-1 select-text"
+            />
+            <div className="ml-auto flex items-center gap-2">
+              <button className="px-3 py-1 rounded-full border text-xs"
+                      onClick={async()=>{ const ok=await askConfirm(); if(!ok) return; await onDelete?.(); }}>
+                Delete
+              </button>
+              <button className="px-3 py-1 rounded-full border text-xs" onClick={onClose}>Done</button>
             </div>
+          </div>
+        </div>
 
-            {/* Photos */}
+        {/* content */}
+        <div className="p-3 space-y-3">
+          {/* Status + City */}
+          <div className="grid grid-cols-2 gap-2 items-start">
             <div>
-              <div className="text-sm font-medium mb-1">Photos</div>
-              {p.photos?.[0] ? (
-                <div className="relative z-10">
-                  <LongPressRegion onLongPress={()=>setSheet({open:true,ref:p.photos[0]})}>
-                    <div
-                      className="w-44 h-28 rounded-lg bg-white border overflow-hidden cursor-pointer"
-                      onClick={()=>{ setViewerPhotos(p.photos||[]); setViewerIndex(0); setViewerFile(p.photos?.[0]); }}
-                    >
-                      <MiniPreview fileRef={p.photos[0]} />
-                    </div>
-                  </LongPressRegion>
-                  <button
-                    type="button"
-                    onClick={()=>document.getElementById(`fs-photos-${p.id}`)?.click()}
-                    className="absolute bottom-2 right-2 z-20 w-9 h-9 rounded-full border bg-white shadow flex items-center justify-center"
-                    title="Add photo"
-                    aria-label="Add photo"
-                  >
-                    +
-                  </button>
-                </div>
-              ) : /* add photos tile unchanged */ null}
+              <div className="text-xs mb-1">Status</div>
+              <StatusPill value={p.status||'New'} onChange={(s)=>onChange({status:s})} />
+            </div>
+            <div>
+              <div className="text-xs mb-1">City</div>
+              <InlinePill label={p.city||''} placeholder="Enter city…" onEdit={(v)=>onChange({city:v})} full />
             </div>
           </div>
 
-          {/* Notes/Blurb section stays as you had it */}
+          {/* Source + Trust */}
+          <div className="grid grid-cols-2 gap-3 items-start">
+            <div>
+              <div className="text-xs mb-1">Suggested by</div>
+              <InlinePill label={p.sourceName||''} placeholder="name..." onEdit={(v)=>onChange({sourceName:v})} full />
+            </div>
+            <div>
+              <div className="text-xs mb-1">Known status</div>
+              <TrustSelect value={p.sourceTrust||''} onChange={(v)=>onChange({sourceTrust:v})} />
+            </div>
+          </div>
+{/* Resume & Photos — long-press to share/save (no share/download buttons) */}
+<div className="grid grid-cols-2 gap-6 w-full items-start">
+  {/* Resume */}
+  <div
+    onDrop={async (e) => {
+      e.preventDefault();
+      const f = e.dataTransfer?.files?.[0];
+      if (f) { const ref = await attachFile(f); onChange({ resume: ref }); }
+    }}
+    onDragOver={(e) => e.preventDefault()}
+  >
+    <div className="text-sm font-medium mb-1">Resume</div>
+
+    {p.resume ? (
+      <LongPressShare fileRef={p.resume}>
+        <div
+          className="w-44 h-28 rounded-lg bg-white border overflow-hidden cursor-pointer"
+          onClick={() => { setViewerFile(p.resume); setViewerPhotos([]); setViewerIndex(0); }}
+          title="Tap to preview • long-press to share/save"
+        >
+          <MiniPreview fileRef={p.resume} />
+        </div>
+      </LongPressShare>
+    ) : (
+      <button
+        type="button"
+        onClick={() => document.getElementById(`fs-resume-${p.id}`)?.click()}
+        className="h-28 w-44 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 flex flex-col items-center justify-center"
+      >
+        <div className="text-3xl leading-none text-gray-400">+</div>
+        <div className="text-xs text-gray-500 mt-1">Add resume</div>
+        <input
+          id={`fs-resume-${p.id}`}
+          type="file"
+          accept="*/*"
+          className="hidden"
+          onChange={async (e) => { const f = e.target.files?.[0]; if (f) { const ref = await attachFile(f); onChange({ resume: ref }); } e.target.value=''; }}
+        />
+      </button>
+    )}
+  </div>
+
+  {/* Photos */}
+  <div
+    onDrop={async (e) => {
+      e.preventDefault();
+      const files = Array.from(e.dataTransfer?.files || []).filter(f => (f.type || '').startsWith('image/'));
+      if (files.length) {
+        const refs = [];
+        for (const f of files) refs.push(await attachFile(f));
+        onChange({ photos: [ ...(p.photos || []), ...refs ] });
+      }
+    }}
+    onDragOver={(e) => e.preventDefault()}
+  >
+    <div className="text-sm font-medium mb-1">Photos</div>
+
+    <div className="relative inline-block">
+      {p.photos?.[1] && (
+        <div className="absolute left-2 top-2 w-44 h-28 rounded-lg bg-white border overflow-hidden opacity-70 pointer-events-none -z-0">
+          <MiniPreview fileRef={p.photos[1]} />
+        </div>
+      )}
+
+      {p.photos?.[0] ? (
+        <div className="relative z-10">
+          <LongPressShare fileRef={p.photos[0]}>
+            <div
+              className="w-44 h-28 rounded-lg bg-white border overflow-hidden cursor-pointer"
+              onClick={() => { setViewerPhotos(p.photos || []); setViewerIndex(0); setViewerFile(p.photos?.[0]); }}
+              title="Tap to preview • long-press to share/save"
+            >
+              <MiniPreview fileRef={p.photos[0]} />
+            </div>
+          </LongPressShare>
+
+          {/* small add button stays */}
+          <button
+            type="button"
+            onClick={()=>document.getElementById(`fs-photos-${p.id}`)?.click()}
+            className="absolute bottom-2 right-2 z-20 w-9 h-9 rounded-full border bg-white shadow flex items-center justify-center"
+            title="Add photo"
+            aria-label="Add photo"
+          >
+            +
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={()=>document.getElementById(`fs-photos-${p.id}`)?.click()}
+          className="h-28 w-44 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 flex flex-col items-center justify-center"
+        >
+          <div className="text-3xl leading-none text-gray-400">+</div>
+          <div className="text-[11px] text-gray-500 mt-1">Add photos</div>
+        </button>
+      )}
+      <input
+        id={`fs-photos-${p.id}`}
+        type="file"
+        accept="image/*"
+        multiple
+        className="hidden"
+        onChange={async (e) => {
+          const fs = Array.from(e.target.files || []);
+          if (fs.length) {
+            const refs = [];
+            for (const f of fs) refs.push(await attachFile(f));
+            onChange({ photos: [ ...(p.photos || []), ...refs ] });
+          }
+          e.target.value = '';
+        }}
+      />
+    </div>
+  </div>
+</div>
+
+         
+          {/* Notes */}
+          <div className="mt-2">
+            <div className="text-sm font-medium">Notes</div>
+            <div className="relative">
+              <textarea
+                className="border rounded p-2 w-full text-sm pr-12 select-text placeholder-gray-400"
+                placeholder="Type notes…"
+                rows={3}
+                value={p.notes || ''}
+                onChange={(e) => onChange({ notes: e.target.value })}
+              />
+              <IconBtn
+                ariaLabel="Share notes"
+                label="Share"
+                onClick={() => shareText(p.notes || '')}
+                className="absolute -bottom-3 -left-3 z-20 border-blue-300 text-blue-700 bg-white/90 hover:bg-white"
+              >
+                <IconShare />
+              </IconBtn>
+            </div>
+          </div>
+
+          {/* Share all */}
+          {hasTwo && (
+            <div>
+              <button type="button"
+                      className="px-3 py-1 rounded-full border text-xs bg-white hover:bg-blue-50 border-blue-300 text-blue-700"
+                      onClick={()=>shareAll({ resume:p.resume, photos:p.photos||[], text:p.notes||'' })}>
+                Share all
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
-      <ActionSheet
-        open={sheet.open}
-        onClose={()=>setSheet({open:false,ref:null})}
-        onShare={()=>sheet.ref && shareRef(sheet.ref)}
-        onDownload={()=>sheet.ref && downloadRef(sheet.ref)}
-      />
+      {/* local viewer */}
+      {viewerFile && (
+        <Viewer
+          fileRef={viewerFile}
+          photos={viewerPhotos}
+          startIndex={viewerIndex}
+          onClose={()=> { setViewerFile(null); setViewerPhotos([]); setViewerIndex(0); }}
+          onDeletePhoto={async (i, ref) => {
+            const ok = await askConfirm(); if (!ok) return;
+            try { if (ref) await deleteFileRef(ref); } catch {}
+            const cur = ensureArray(p.photos);
+            const next = cur.filter((_, idx)=> idx !== i);
+            onChange({ photos: next });
+            setViewerPhotos(next);
+            if (next.length === 0) { setViewerFile(null); }
+            else {
+              const newIndex = Math.min(i, next.length-1);
+              setViewerIndex(newIndex);
+              setViewerFile(next[newIndex]);
+            }
+          }}
+        />
+      )}
       {Confirm}
-    </div>
-  );
-}
-
-// ===== MyProfile (long-press enabled) =====
-function MyProfile({ profile, saveProfile }) {
-  const profiles=ensureArray(profile?.profiles);
-  const [viewerFile, setViewerFile] = useState(null);
-  const [viewerPhotos, setViewerPhotos] = useState([]);
-  const [viewerIndex, setViewerIndex] = useState(0);
-  const { ask: askConfirm, Confirm } = useConfirm();
-  const [sheet, setSheet] = useState({ open:false, ref:null });
-
-  const selected=profiles[0];
-
-  return (
-    <div className="space-y-4">
-      {selected ? (
-        <>
-          {/* Resume */}
-          <div>
-            <div className="text-xs mb-1">Resume</div>
-            {selected.resume ? (
-              <div className="relative inline-block">
-                <LongPressRegion onLongPress={()=>setSheet({open:true,ref:selected.resume})}>
-                  <div
-                    className="w-44 h-28 rounded-lg bg-white border overflow-hidden cursor-pointer"
-                    onClick={()=>{ setViewerFile(selected.resume); setViewerPhotos([]); setViewerIndex(0); }}
-                  >
-                    <MiniPreview fileRef={selected.resume} />
-                  </div>
-                </LongPressRegion>
-                <IconBtn
-                  ariaLabel="Delete resume"
-                  label="Delete"
-                  onClick={async (e)=>{ e.stopPropagation(); const ok=await askConfirm(); if(!ok) return; if (selected.resume) await deleteFileRef(selected.resume); }}
-                  className="absolute -top-3 -right-3 z-20 border-rose-300 text-rose-700 bg-white shadow"
-                >
-                  <span className="text-lg leading-none">×</span>
-                </IconBtn>
-              </div>
-            ) : /* add resume tile unchanged */ null}
-          </div>
-
-          {/* Photos */}
-          <div>
-            <div className="text-xs mb-1">Photos</div>
-            {selected.photos?.[0] ? (
-              <div className="relative z-10">
-                <LongPressRegion onLongPress={()=>setSheet({open:true,ref:selected.photos[0]})}>
-                  <div
-                    className="w-44 h-28 rounded-lg bg-white border overflow-hidden cursor-pointer"
-                    onClick={()=>{ setViewerPhotos(selected.photos||[]); setViewerIndex(0); setViewerFile(selected.photos?.[0]); }}
-                  >
-                    <MiniPreview fileRef={selected.photos[0]} />
-                  </div>
-                </LongPressRegion>
-                <button
-                  type="button"
-                  onClick={()=>document.getElementById(`profile-photos-${selected.id}`)?.click()}
-                  className="absolute bottom-2 right-2 z-20 w-9 h-9 rounded-full border bg-white shadow flex items-center justify-center"
-                  title="Add photo"
-                  aria-label="Add photo"
-                >
-                  +
-                </button>
-              </div>
-            ) : /* add photos tile unchanged */ null}
-          </div>
-
-          <ActionSheet
-            open={sheet.open}
-            onClose={()=>setSheet({open:false,ref:null})}
-            onShare={()=>sheet.ref && shareRef(sheet.ref)}
-            onDownload={()=>sheet.ref && downloadRef(sheet.ref)}
-          />
-          {Confirm}
-        </>
-      ) : <div>No profile</div>}
     </div>
   );
 }
@@ -1267,7 +1370,225 @@ function EditableText({ value, onChange, className, inputClass, placeholder="nam
     </button>
   );
 }
+function MyProfile({ profile, saveProfile }){
+  const profiles=ensureArray(profile?.profiles);
+  const [viewerFile, setViewerFile] = useState(null);
+  const [viewerPhotos, setViewerPhotos] = useState([]);
+  const [viewerIndex, setViewerIndex] = useState(0);
+  const [selId,setSelId]=useState(profiles[0]?.id||'');
+  useEffect(()=>{ if(!selId && profiles[0]?.id) setSelId(profiles[0].id); },[profile?.profiles]);
+  const addProfile=()=>{ const newP={ id:uid(), name:'', photos:[], resume:null, blurb:'', updatedAt:Date.now() }; const next=[...profiles,newP]; saveProfile({ ...(profile||{}), profiles:next, updatedAt:Date.now() }); setSelId(newP.id); };
+  const updateProfile=(id,patch)=>{ const next=profiles.map(k=> k.id===id?{...k,...patch,updatedAt:Date.now()}:k); saveProfile({ ...(profile||{}), profiles:next, updatedAt:Date.now() }); };
+  const selected=profiles.find(k=>k.id===selId);
+  const [editId,setEditId]=useState(''); const [editVal,setEditVal]=useState('');
+  const [menu,setMenu]=useState({open:false,profileId:'',x:0,y:0});
+  const { ask: askConfirm, Confirm } = useConfirm();
+  const menuRef=useRef(null);
+  useEffect(()=>{ if(!menu.open) return; const close=(e)=>{ if(menuRef.current && !menuRef.current.contains(e.target)) setMenu(s=>({...s,open:false})); }; document.addEventListener('pointerdown', close, true); return ()=>document.removeEventListener('pointerdown', close, true); },[menu.open]);
+  const lpRef=useRef(null);
+  const startLP=(el,id)=>{ clearTimeout(lpRef.current); lpRef.current=setTimeout(()=>{ const r=el?.getBoundingClientRect?.(); if(!r) return; setMenu({open:true,profileId:id,x:r.left+r.width/2,y:r.bottom+8}); },500); };
+  const cancelLP=()=> clearTimeout(lpRef.current);
+  const deleteProfile=async()=>{ const id=menu.profileId; const ok = await askConfirm(); if(!ok) return;
+    const prof = profiles.find(p=>p.id===id);
+    try {
+      if (prof?.resume) await deleteFileRef(prof.resume);
+      for (const ph of ensureArray(prof?.photos)) await deleteFileRef(ph);
+    } catch {}
+    const next=profiles.filter(k=>k.id!==id); saveProfile({ ...(profile||{}), profiles:next, updatedAt:Date.now() }); if(selId===id) setSelId(next[0]?.id||''); setMenu(s=>({...s,open:false})); };
 
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2 flex-wrap">
+        {profiles.map(k=> (
+          editId===k.id ? (
+            <input key={k.id} className={`px-3 py-1 rounded-full border select-text`} autoFocus value={editVal} onChange={(e)=>setEditVal(e.target.value)} onKeyDown={(e)=>{ if(e.key==='Enter'){ updateProfile(k.id,{name:(editVal||'').trim()}); setEditId(''); } if(e.key==='Escape'){ setEditId(''); } }} onBlur={()=>{ updateProfile(k.id,{name:(editVal||'').trim()}); setEditId(''); }} />
+          ) : (
+            <button key={k.id} className={`px-3 py-1 rounded-full border ${selId===k.id?'bg-black text-white':'bg-white'}`} onClick={()=>{ if(selId!==k.id) setSelId(k.id); else { setEditId(k.id); setEditVal(k.name||''); } }} onContextMenu={(e)=>{ e.preventDefault(); const r=e.currentTarget.getBoundingClientRect(); setMenu({open:true,profileId:k.id,x:r.left+r.width/2,y:r.bottom+8}); }} onMouseDown={(e)=>startLP(e.currentTarget,k.id)} onMouseUp={cancelLP} onMouseLeave={cancelLP} onTouchStart={(e)=>startLP(e.currentTarget,k.id)} onTouchEnd={cancelLP} onTouchMove={cancelLP}>
+              {k.name ? k.name : <span className="text-gray-400">name...</span>}
+            </button>
+          )
+        ))}
+        <button className="px-3 py-1 rounded-full border" onClick={addProfile} aria-label="Add profile">+</button>
+      </div>
+
+      {menu.open && (
+        <div ref={menuRef} style={{position:'fixed', left:menu.x, top:menu.y, transform:'translateX(-50%)'}} className="z-50 rounded border bg-white shadow">
+          <button className="block w-full text-left px-3 py-2 text-red-600 hover:bg-red-50" onClick={deleteProfile}>Delete</button>
+        </div>
+      )}
+
+      {selected ? (
+        <>
+          <div className="grid grid-cols-2 gap-2">
+          {/* Resume — simplified (no Share/Download; long-press to share/save) */}
+<div>
+  <div className="text-xs mb-1">Resume</div>
+
+  {selected.resume ? (
+    <>
+      <LongPressShare fileRef={selected.resume}>
+        <div
+          className="group cursor-pointer inline-block"
+          onClick={() => {
+            setViewerFile(selected.resume);
+            setViewerPhotos([]);
+            setViewerIndex(0);
+          }}
+          title="Tap to view. Long-press to share/save."
+        >
+          <div className="w-40">
+            <MiniPreview fileRef={selected.resume} />
+          </div>
+        </div>
+      </LongPressShare>
+
+      {/* Keep only Delete */}
+      <div className="flex items-center gap-2 mt-2">
+        <IconBtn
+          ariaLabel="Delete"
+          label="Delete"
+          onClick={async (e) => {
+            e.stopPropagation();
+            const ok = await askConfirm(); if (!ok) return;
+            if (selected.resume) await deleteFileRef(selected.resume);
+            updateProfile(selected.id, { resume: null });
+          }}
+          className="border-rose-300 text-rose-700 hover:bg-rose-50"
+        >
+          <IconX />
+        </IconBtn>
+      </div>
+    </>
+  ) : (
+    <button
+      type="button"
+      onClick={() => document.getElementById(`profile-resume-${selected.id}`)?.click()}
+      className="h-28 w-40 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 shadow-sm flex flex-col items-center justify-center"
+    >
+      <div className="text-3xl leading-none text-gray-400">+</div>
+      <div className="text-xs text-gray-500 mt-1">Add resume</div>
+      <input
+        id={`profile-resume-${selected.id}`}
+        type="file"
+        accept="*/*"
+        className="hidden"
+        onChange={async (e) => {
+          const f = e.target.files?.[0];
+          if (f) {
+            const ref = await attachFile(f);
+            updateProfile(selected.id, { resume: ref });
+          }
+          e.target.value = "";
+        }}
+      />
+    </button>
+  )}
+</div>
+
+            {/* Photos (no share/download buttons; long-press to share/save) */}
+            <div>
+              <div className="text-xs mb-1">Photos</div>
+
+              <div className="relative inline-block">
+                {selected.photos?.[1] && (
+                  <div className="absolute left-2 top-2 w-40 h-28 rounded-md bg-white border overflow-hidden opacity-70 pointer-events-none -z-0">
+                    <MiniPreview fileRef={selected.photos[1]} />
+                  </div>
+                )}
+
+                {selected.photos?.[0] ? (
+                  <div className="relative z-10">
+                    <LongPressShare fileRef={selected.photos[0]}>
+                      <div
+                        className="w-40 h-28 rounded-md bg-white border overflow-hidden cursor-pointer"
+                        onClick={()=>{ setViewerPhotos(selected.photos||[]); setViewerIndex(0); setViewerFile(selected.photos?.[0]); }}
+                        role="button"
+                        tabIndex={0}
+                        title="Tap to preview • long-press to share/save"
+                        onKeyDown={(e)=>{ if(e.key==='Enter' || e.key===' '){ e.preventDefault(); setViewerPhotos(selected.photos||[]); setViewerIndex(0); setViewerFile(selected.photos?.[0]); } }}
+                      >
+                        <MiniPreview fileRef={selected.photos[0]} />
+                      </div>
+                    </LongPressShare>
+
+                    {/* small add button stays */}
+                    <button
+                      type="button"
+                      onClick={()=>document.getElementById(`profile-photos-${selected.id}`)?.click()}
+                      className="absolute -bottom-3 -right-3 z-20 w-8 h-8 rounded-full border bg-white shadow flex items-center justify-center"
+                      title="Add photo"
+                    >+</button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={()=>document.getElementById(`profile-photos-${selected.id}`)?.click()}
+                    className="h-28 w-40 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 shadow-sm flex flex-col items-center justify-center"
+                  >
+                    <div className="text-3xl leading-none text-gray-400">+</div>
+                    <div className="text-[11px] text-gray-500 mt-1">Add photos</div>
+                  </button>
+                )}
+                <input id={`profile-photos-${selected.id}`} type="file" accept="image/*" multiple className="hidden" onChange={async(e)=>{ const fs=Array.from(e.target.files||[]); if(fs.length){ const refs=[]; for(const f of fs){ refs.push(await attachFile(f)); } updateProfile(selected.id,{photos:[...(selected.photos||[]), ...refs]}); } e.target.value=""; }} />
+              </div>
+            </div>
+
+            {/* Viewer + Confirm */}
+            {viewerFile && (
+              <Viewer
+                fileRef={viewerFile}
+                photos={viewerPhotos}
+                startIndex={viewerIndex}
+                onClose={()=> { setViewerFile(null); setViewerPhotos([]); setViewerIndex(0); }}
+                onDeletePhoto={async (i, ref) => {
+                  const ok = await askConfirm(); if (!ok) return;
+                  try { if (ref) await deleteFileRef(ref); } catch {}
+                  const cur = ensureArray(selected?.photos);
+                  const next = cur.filter((_, idx)=> idx !== i);
+                  updateProfile(selected.id, { photos: next });
+                  setViewerPhotos(next);
+                  if (next.length === 0) { setViewerFile(null); }
+                  else {
+                    const newIndex = Math.min(i, next.length-1);
+                    setViewerIndex(newIndex);
+                    setViewerFile(next[newIndex]);
+                  }
+                }}
+              />
+            )}
+            {Confirm}
+          </div>
+
+          {/* Blurb — unchanged; Share all logic below remains */}
+          <div className="mt-2 max-w-xl">
+            <div className="text-xs">Blurb</div>
+            <div className="relative">
+              <textarea className="border rounded p-2 w-full text-xs pr-12 select-text placeholder-gray-400" rows={2} value={selected.blurb || ''} onChange={e=>updateProfile(selected.id,{blurb:e.target.value})} placeholder="Type blurb…" />
+            </div>
+          </div>
+
+          {/* Share all (unchanged) */}
+          {(() => {
+            let count = 0; if (selected.resume) count++; if ((selected.photos||[]).length) count++; if ((selected.blurb||'').trim()) count++;
+            return count >= 2 ? (
+              <div className="mt-3">
+                <button type="button" className="px-3 py-1 rounded-full border text-xs bg-white hover:bg-blue-50 border-blue-300 text-blue-700"
+                  onClick={()=>shareAll({ resume:selected.resume, photos:selected.photos||[], text:selected.blurb||'' })}
+                >
+                  Share all
+                </button>
+              </div>
+            ) : null;
+          })()}
+        </>
+      ) : (
+        <div className="text-xs text-gray-500">
+          Add a profile to attach a photo or resume.
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ===== App (glue) =====
 export default function App(){
