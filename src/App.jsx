@@ -20,6 +20,23 @@ const ensureArray = (v) => (Array.isArray(v) ? v : []);
 const STATUS = ["New", "Researching", "Dating", "On Hold", "Pass", "Reconsidering"];
 const TRUST = ["Shadchan (met)", "Shadchan (never met)", "Friend", "Acquaintance", "Never met"];
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// === Missing helpers (add these) ===
+const fileToBase64 = (blob) =>
+  new Promise((resolve, reject) => {
+    try {
+      const r = new FileReader();
+      r.onloadend = () => resolve((r.result || '').toString().split(',')[1] || '');
+      r.onerror = reject;
+      r.readAsDataURL(blob);
+    } catch (e) { reject(e); }
+  });
+
+const base64ToBlob = (b64, type = 'application/octet-stream') => {
+  const s = atob(b64 || '');
+  const a = new Uint8Array(s.length);
+  for (let i = 0; i < s.length; i++) a[i] = s.charCodeAt(i);
+  return new Blob([a], { type });
+};
 
 // ===== Icons =====
 const IconBtn = ({ label, onClick, className = "", children, ariaLabel, disabled }) => (
