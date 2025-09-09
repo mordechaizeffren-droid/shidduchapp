@@ -74,20 +74,6 @@ const IconPlus = (p) => (
   </svg>
 );
 
-// ===== File helpers (now with base64 for sync) =====
-const fileToBase64 = (blob) => new Promise((res, rej) => {
-  const r = new FileReader();
-  r.onloadend = () => res((r.result || "").toString().split(",")[1]);
-  r.onerror = rej;
-  r.readAsDataURL(blob);
-});
-const base64ToBlob = (b64, type) => {
-  const s = atob(b64);
-  const a = new Uint8Array(s.length);
-  for (let i = 0; i < s.length; i++) a[i] = s.charCodeAt(i);
-  return new Blob([a], { type });
-};
-
 const attachFile = async (file) => {
   const id = uid();
   await dbFiles.setItem(id, file);
