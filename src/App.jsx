@@ -260,31 +260,35 @@ function useFilePreview(fileRef){
   }, [fileRef?.id, fileRef?.key]); // rerun if ref changes
   return url;
 }
-// REPLACE the entire MiniPreview function with this:
 function MiniPreview({ fileRef }) {
   const url = useFilePreview(fileRef);
   const type = (fileRef?.type || "").toLowerCase();
   const isImg = type.startsWith("image/");
-  const isPdf = type === "application/pdf" || (fileRef?.name || "").toLowerCase().endsWith(".pdf");
+  const isPdf = type === "application/pdf" || (fileRef?.name||"").toLowerCase().endsWith(".pdf");
+
   if (!fileRef) return null;
+
+  const Skeleton = (
+    <div className="w-full h-28 rounded-md border overflow-hidden">
+      <div className="h-full w-full bg-gradient-to-r from-gray-100 via-gray-200 to-gray-100 animate-[pulse_1.2s_ease-in-out_infinite]" />
+    </div>
+  );
+
+  if (!url) return Skeleton;
 
   return (
     <div className="w-full h-28 rounded-md bg-white border overflow-hidden">
-      {isImg && url ? (
-        <img src={url} alt={fileRef.name || "image"} className="w-full h-full object-contain" draggable={false} />
-      ) : isPdf && url ? (
-        // pointer-events disabled so parent onClick works (tap-to-view)
-        <iframe
-          src={`${url}#view=FitH&zoom=page-fit`}
-          title="Preview"
-          className="w-full h-full pointer-events-none"
-        />
+      {isImg ? (
+        <img src={url} alt={fileRef.name||"image"} className="w-full h-full object-contain" draggable={false} />
+      ) : isPdf ? (
+        <iframe src={`${url}#view=FitH&zoom=page-fit`} title="Preview" className="w-full h-full pointer-events-none" />
       ) : (
         <div className="w-full h-full flex items-center justify-center text-3xl text-gray-400">📄</div>
       )}
     </div>
   );
 }
+
 // --- pdf.js (UMD) one-time loader ---
 let __pdfjsPromise = null;
 function loadPdfjs() {
