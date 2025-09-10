@@ -260,29 +260,46 @@ function useFilePreview(fileRef){
   }, [fileRef?.id, fileRef?.key]); // rerun if ref changes
   return url;
 }
+// REPLACE MiniPreview with this:
 function MiniPreview({ fileRef }) {
   const url = useFilePreview(fileRef);
   const type = (fileRef?.type || "").toLowerCase();
+  const name = (fileRef?.name || "").toLowerCase();
   const isImg = type.startsWith("image/");
-  const isPdf = type === "application/pdf" || (fileRef?.name||"").toLowerCase().endsWith(".pdf");
+  const isPdf = type === "application/pdf" || name.endsWith(".pdf");
 
   if (!fileRef) return null;
 
-  const Skeleton = (
-    <div className="w-full h-28 rounded-md border overflow-hidden">
-      <div className="h-full w-full bg-gradient-to-r from-gray-100 via-gray-200 to-gray-100 animate-[pulse_1.2s_ease-in-out_infinite]" />
-    </div>
-  );
-
-  if (!url) return Skeleton;
+  const loading = !url;
 
   return (
-    <div className="w-full h-28 rounded-md bg-white border overflow-hidden">
-      {isImg ? (
-        <img src={url} alt={fileRef.name||"image"} className="w-full h-full object-contain" draggable={false} />
-      ) : isPdf ? (
-        <iframe src={`${url}#view=FitH&zoom=page-fit`} title="Preview" className="w-full h-full pointer-events-none" />
-      ) : (
+    <div className="w-full h-28 rounded-md bg-white border overflow-hidden relative">
+      {/* Shimmer while loading */}
+      {loading && (
+        <div className="absolute inset-0 animate-pulse bg-gray-100" />
+      )}
+
+      {/* Image */}
+      {isImg && url && (
+        <img
+          src={url}
+          alt={fileRef.name || "image"}
+          className="w-full h-full object-contain"
+          draggable={false}
+        />
+      )}
+
+      {/* PDF (static preview via iframe; pointer-events off so clicks bubble) */}
+      {isPdf && url && (
+        <iframe
+          src={`${url}#view=FitH&zoom=page-fit`}
+          title="Preview"
+          className="w-full h-full pointer-events-none"
+        />
+      )}
+
+      {/* Fallback icon when we have neither URL nor a known type */}
+      {!isImg && !isPdf && !loading && (
         <div className="w-full h-full flex items-center justify-center text-3xl text-gray-400">📄</div>
       )}
     </div>
