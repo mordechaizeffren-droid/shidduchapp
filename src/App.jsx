@@ -131,21 +131,6 @@ const deleteFileRef = async (ref) => {
   try { if (ref?.key) await removeFile(ref.key); } catch {}
 };
 
-const useFilePreview = (fileRef) => {
-  const [url, setUrl] = useState('');
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      if (!fileRef) { setUrl(''); return; }
-      // Get a signed URL (or public URL) from Supabase
-      const u = await getFileUrl(fileRef);
-      if (alive) setUrl(u || '');
-    })();
-    return () => { alive = false; };
-  }, [fileRef?.key, fileRef?.id, fileRef?.url]);
-  return url;
-};
-
 // Download/share via URL instead of blob
 const downloadRef = async (ref) => {
   const url = await getFileUrl(ref); if (!url) return;
