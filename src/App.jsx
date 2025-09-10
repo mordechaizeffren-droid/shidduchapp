@@ -2,7 +2,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import localforage from "localforage";
 import { fetchRoom, saveRoom, subscribeRoom } from "./lib/sync";
-import { uploadFile, viewUrl, downloadRef, deleteRef } from "./lib/files";
+import { uploadFile, viewUrl, deleteRef } from "./lib/files";
 
 // =============================================================================
 // Shidduch Organizer — Single File App • v2.0 (Lite, updated)
@@ -133,13 +133,13 @@ const deleteFileRef = async (ref) => {
 
 // Download/share via URL instead of blob
 const downloadRef = async (ref) => {
-  const url = await getFileUrl(ref); if (!url) return;
+  const url = await viewUrl(ref); if (!url) return;
   const a = document.createElement("a");
   a.href = url; a.download = ref?.name || "download"; a.click();
 };
 
 const shareRef = async (ref) => {
-  const url = await getFileUrl(ref); if (!url) return;
+  const url = await viewUrl(ref); if (!url) return;
   const navAny = navigator;
   try {
     if (navAny.share) { await navAny.share({ url, title: ref?.name || 'file' }); return; }
@@ -150,9 +150,9 @@ const shareRef = async (ref) => {
 // Share all (uses URLs)
 const shareAll = async ({ resume, photos, text }) => {
   const urls = [];
-  const r = await getFileUrl(resume); if (r) urls.push(r);
+  const r = await viewUrl(resume); if (r) urls.push(r);
   for (const ph of ensureArray(photos)) {
-    const u = await getFileUrl(ph);
+    const u = await viewUrl(ph);
     if (u) urls.push(u);
   }
   const t = (text || '').trim();
@@ -226,6 +226,34 @@ function useConfirm() {
   },[state]);
 
   return { ask, Confirm };
+}
+// ===== Upload previews & viewer =====
+function useFilePreview(fileRef) {
+  const [url, setUrl] = useState('');
+  useEffect(() => {
+    let alive = true;
+    let obj = '';
+
+    (async () => {
+      setUrl('');
+      if (fileRef && fileRef.id) {
+        const blob = await dbFiles.getItem(fileRef.id);
+        if (!alive) return;
+        if (!blob) { setUrl(''); return; }
+        obj = URL.createObjectURL(blob);
+        setUrl(obj);
+      } else {
+        setUrl('');
+      }
+    })();
+
+    return () => {
+      alive = false;
+      if (obj) setTimeout(() => URL.revokeObjectURL(obj), 0);
+    };
+  }, [fileRef?.id]);
+
+  return url;
 }
 
 // REPLACE the entire MiniPreview function with this:
