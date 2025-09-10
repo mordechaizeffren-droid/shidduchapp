@@ -2,7 +2,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import localforage from "localforage";
 import { fetchRoom, saveRoom, subscribeRoom } from "./lib/sync";
-import { uploadFile, getFileUrl, downloadBlob, removeFile } from "./lib/files";
+import { uploadFile, viewUrl, downloadRef, deleteRef } from "./lib/files";
 
 // =============================================================================
 // Shidduch Organizer — Single File App • v2.0 (Lite, updated)
@@ -128,7 +128,7 @@ const attachFile = async (file) => {
 };
 
 const deleteFileRef = async (ref) => {
-  try { if (ref?.key) await removeFile(ref.key); } catch {}
+  try { if (ref?.key) await deleteRef(ref); } catch {}
 };
 
 // Download/share via URL instead of blob
@@ -226,20 +226,6 @@ function useConfirm() {
   },[state]);
 
   return { ask, Confirm };
-}
-
-// ===== Upload previews & viewer =====
-function useFilePreview(fileRef){
-  const [url,setUrl]=useState('');
-  useEffect(()=>{
-    let alive=true; let obj='';
-    (async()=>{
-      if(fileRef && fileRef.id){ const blob = await dbFiles.getItem(fileRef.id); if(!alive||!blob) { setUrl(''); return; } obj=URL.createObjectURL(blob); setUrl(obj); }
-      else { setUrl(''); }
-    })();
-    return () => { alive = false; if (obj) setTimeout(() => URL.revokeObjectURL(obj), 0); };
-  },[fileRef?.id]);
-  return url;
 }
 
 // REPLACE the entire MiniPreview function with this:
