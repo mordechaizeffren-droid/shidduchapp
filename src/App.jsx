@@ -1708,28 +1708,42 @@ useEffect(() => {
     }catch{}
   };
 
-  // Minimal cloud sync
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      if (!sync?.room) return;
-      const cloud = await fetchRoom(sync.room);
-      if (!cloud || cancelled) return;
-      let prof = cloud.profile;
-      if (prof?.kids && !prof.profiles) {
-        prof = { ...prof, profiles: ensureArray(prof.kids).map(k=>({ ...k, photos: k.photos || (k.photo?[k.photo]:[]), photo: undefined })), kids: undefined };
-      }
-      if (prof) setProfile(prof);
-      let list = Array.isArray(cloud.prospects) ? cloud.prospects : [];
-      list = list.map(it => !Array.isArray(it.photos) ? ({ ...it, photos: it.photo?[it.photo]:[], photo: undefined, profileId: it.profileId || it.kidId }) : it);
-      setProspects(list);
-    })();
-    return () => { cancelled = true; };
-  }, [sync?.room]);
+  // === START REPLACE: Minimal cloud sync section ===
 
-  useEffect(() => {
+// Minimal cloud sync: initial fetch
+useEffect(() => {
+  let cancelled = false;
+  (async () => {
     if (!sync?.room) return;
-    // sync receive
+    const cloud = await fetchRoom(sync.room);
+    if (!cloud || cancelled) return;
+
+    let prof = cloud.profile;
+    if (prof?.kids && !prof.profiles) {
+      prof = {
+        ...prof,
+        profiles: ensureArray(prof.kids).map(k => ({
+          ...k,
+          photos: k.photos || (k.photo ? [k.photo] : []),
+          photo: undefined
+        })),
+        kids: undefined
+      };
+    }
+    if (prof) setProfile(prof);
+
+    let list = Array.isArray(cloud.prospects) ? cloud.prospects : [];
+    list = list.map(it =>
+      !Array.isArray(it.photos)
+        ? { ...it, photos: it.photo ? [it.photo] : [], photo: undefined, profileId: it.profileId || it.kidId }
+        : it
+    );
+    setProspects(list);
+  })();
+  return () => { cancelled = true; };
+}, [sync?.room]);
+
+// Sync receive (subscribe)
 useEffect(() => {
   if (!sync?.room) return;
   const unsub = subscribeRoom(sync.room, async (payload) => {
@@ -1754,7 +1768,8 @@ useEffect(() => {
   });
   return () => { try { unsub?.(); } catch {} };
 }, [sync?.room]);
-// sync send
+
+// Sync send
 useEffect(() => {
   if (!sync?.room) return;
   if (lastAppliedRef.current && Date.now() - lastAppliedRef.current < 800) return;
@@ -1789,6 +1804,8 @@ useEffect(() => {
   const t = setTimeout(send, 400);
   return () => clearTimeout(t);
 }, [profile, prospects, sync?.room]);
+
+// === END REPLACE: Minimal cloud sync section ===
 
   // Export / Import (v2)
   const importRef=useRef(null);
