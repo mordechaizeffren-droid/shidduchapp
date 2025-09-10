@@ -12,7 +12,6 @@ function useAutosize(ref, value) {
   }, [ref, value]);
 }
 
-
 // =============================================================================
 // Shidduch Organizer — Single File App • v2.0 (Lite, updated)
 // Implements: expand-tab, folder tabs, share icon rules, selection guards,
@@ -181,6 +180,25 @@ const shareAll = async ({ resume, photos, text }) => {
   // Fallback: open first URL + copy text
   if (urls[0]) window.open(urls[0], "_blank", "noopener,noreferrer");
   if (t) { try { await navigator.clipboard.writeText(t); } catch {} }
+};
+const shareText = async (text) => {
+  const t = (text || '').trim();
+  if (!t) return;
+  const navAny = navigator;
+  try {
+    if (navAny.share) {
+      await navAny.share({ text: t });
+      return;
+    }
+  } catch (e) {
+    if (e?.name === 'AbortError') return; // user canceled
+  }
+  try {
+    await navigator.clipboard.writeText(t);
+    alert('Notes copied to clipboard');
+  } catch {
+    alert('Unable to share/copy notes');
+  }
 };
 
 // ===== Small UI bits =====
@@ -1332,18 +1350,34 @@ useAutosize(notesRef, p.notes);
     </div>
   </div>
 </div>
-
+    {/* Notes */}
+<div>
+  <div className="text-xs mb-1">Notes</div>
+  <div className="relative">
+    <textarea
+      ref={notesRef}
+      className="border rounded p-2 w-full text-xs select-text placeholder-gray-400 resize-none overflow-hidden"
+      rows={2}
+      value={p.notes || ''}
+      onChange={(e) => onChange({ notes: e.target.value })}
+      onInput={(e) => {
+        e.target.style.height = 'auto';
+        e.target.style.height = String(e.target.scrollHeight) + 'px';
+      }}
+      placeholder="Type notes…"
+    />
+    <div className="mt-2">
       <IconBtn
-  ariaLabel="Share notes"
-  label="Share"
-      onClick={() => shareText(p.notes || '')}
-      className="absolute -bottom-3 -left-3 z-20 border-blue-300 text-blue-700 bg-white/90 hover:bg-white"
-    >
-      <IconShare />
-    </IconBtn>
+        ariaLabel="Share notes"
+        label="Share"
+        onClick={() => shareText(p.notes || '')}
+        className="border-blue-300 text-blue-700 bg-white hover:bg-blue-50"
+      >
+        <IconShare />
+      </IconBtn>
+    </div>
   </div>
 </div>
-
           {/* Share all */}
           {hasTwo && (
             <div>
@@ -1380,9 +1414,10 @@ useAutosize(notesRef, p.notes);
           }}
         />
       )}
-      {Confirm}
-    </div>
-  );
+     {Confirm}
+</div>
+</div>
+);
 }
 
 // ===== Inline editors & selects =====
