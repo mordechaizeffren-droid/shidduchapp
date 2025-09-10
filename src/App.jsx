@@ -260,7 +260,33 @@ function useFilePreview(fileRef) {
 
   return url;
 }
-
+// ----- Upload previews & viewer (local blob with remote fallback) -----
+function useFilePreview(fileRef){
+  const [url, setUrl] = useState('');
+  useEffect(() => {
+    let alive = true;
+    let obj = '';
+    (async () => {
+      // Try local cached blob first
+      if (fileRef?.id) {
+        const blob = await dbFiles.getItem(fileRef.id);
+        if (blob) {
+          obj = URL.createObjectURL(blob);
+          if (alive) setUrl(obj);
+          return;
+        }
+      }
+      // Fallback: signed/public Supabase URL so OTHER DEVICES can view
+      const remote = await viewUrl(fileRef);
+      if (alive) setUrl(remote || '');
+    })();
+    return () => { 
+      alive = false; 
+      if (obj) setTimeout(() => URL.revokeObjectURL(obj), 0);
+    };
+  }, [fileRef?.id, fileRef?.key]); // rerun if ref changes
+  return url;
+}
 // REPLACE the entire MiniPreview function with this:
 function MiniPreview({ fileRef }) {
   const url = useFilePreview(fileRef);
