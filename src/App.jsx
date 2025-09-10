@@ -232,34 +232,7 @@ function useConfirm() {
 
   return { ask, Confirm };
 }
-// ===== Upload previews & viewer =====
-function useFilePreview(fileRef) {
-  const [url, setUrl] = useState('');
-  useEffect(() => {
-    let alive = true;
-    let obj = '';
 
-    (async () => {
-      setUrl('');
-      if (fileRef && fileRef.id) {
-        const blob = await dbFiles.getItem(fileRef.id);
-        if (!alive) return;
-        if (!blob) { setUrl(''); return; }
-        obj = URL.createObjectURL(blob);
-        setUrl(obj);
-      } else {
-        setUrl('');
-      }
-    })();
-
-    return () => {
-      alive = false;
-      if (obj) setTimeout(() => URL.revokeObjectURL(obj), 0);
-    };
-  }, [fileRef?.id]);
-
-  return url;
-}
 // ----- Upload previews & viewer (local blob with remote fallback) -----
 function useFilePreview(fileRef){
   const [url, setUrl] = useState('');
