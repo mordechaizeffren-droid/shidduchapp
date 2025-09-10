@@ -3,6 +3,15 @@ import React, { useEffect, useRef, useState } from "react";
 import localforage from "localforage";
 import { fetchRoom, saveRoom, subscribeRoom } from "./lib/sync";
 import { uploadFile, viewUrl, deleteRef } from "./lib/files";
+function useAutosize(ref, value) {
+  React.useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = String(el.scrollHeight) + 'px';
+  }, [ref, value]);
+}
+
 
 // =============================================================================
 // Shidduch Organizer — Single File App • v2.0 (Lite, updated)
