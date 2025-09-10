@@ -1625,10 +1625,10 @@ useAutosize(blurbRef, selected?.blurb);
   rows={2}
   value={selected.blurb || ''}
   onChange={(e)=>updateProfile(selected.id,{blurb:e.target.value})}
-  onInput={(e) => {
-    e.target.style.height = 'auto';
-    e.target.style.height = `${e.target.scrollHeight}px`;
-  }}
+ onInput={(e) => {
+  e.target.style.height = 'auto';
+  e.target.style.height = String(e.target.scrollHeight) + 'px';
+}}
   placeholder="Type blurb…"
 />
 
