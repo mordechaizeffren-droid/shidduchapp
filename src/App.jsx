@@ -27,7 +27,6 @@ const STATUS = ["New", "Researching", "Dating", "On Hold", "Pass", "Reconsiderin
 const TRUST = ["Shadchan (met)", "Shadchan (never met)", "Friend", "Acquaintance", "Never met"];
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const fileToBase64 = (blob) =>
   new Promise((resolve, reject) => {
@@ -1790,15 +1789,6 @@ useEffect(() => {
   const t = setTimeout(send, 400);
   return () => clearTimeout(t);
 }, [profile, prospects, sync?.room]);
-
-  // Debounced push
-  useEffect(() => {
-    if (!sync?.room) return;
-    if (lastAppliedRef.current && Date.now() - lastAppliedRef.current < 800) return;
-    if (applyingRemoteRef.current) { applyingRemoteRef.current = false; return; }
-    const t = setTimeout(() => { saveRoom(sync.room, { profile, prospects, clientId }).catch(()=>{}); }, 400);
-    return () => clearTimeout(t);
-  }, [profile, prospects, sync?.room]);
 
   // Export / Import (v2)
   const importRef=useRef(null);
