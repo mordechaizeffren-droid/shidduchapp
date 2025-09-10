@@ -1898,36 +1898,49 @@ useEffect(() => {
     <div className="absolute inset-x-0 bottom-0 h-px bg-gray-200" />
 
     <div className="flex items-end gap-2">
-      <button
-        role="tab"
-        aria-selected={tab==='prospects'}
-        className={`px-3 py-2 rounded-t-xl border border-b-0 transition-all
-          ${tab==='prospects'
-            ? 'bg-gradient-to-b from-white to-gray-50 shadow-lg ring-1 ring-black/5 translate-y-[1px]'
-            : 'bg-gray-50 text-gray-700 hover:shadow-sm'
-          }`}
-        onClick={()=>setTab('prospects')}
-      >
-        Resumes
-      </button>
+      {/* Resumes tab */}
+      <div className="relative">
+        {tab==='prospects' && (
+          <div className="absolute -top-1 left-0 right-0 h-1 bg-amber-500 rounded-t" />
+        )}
+        <button
+          role="tab"
+          aria-selected={tab==='prospects'}
+          className={`px-3 py-2 rounded-t-xl border border-b-0 transition-all
+            ${tab==='prospects'
+              ? 'bg-amber-500 text-white border-amber-600 shadow-lg ring-1 ring-black/5 translate-y-[1px]'
+              : 'bg-gray-50 text-gray-700 hover:shadow-sm'
+            }`}
+          onClick={()=>setTab('prospects')}
+        >
+          Resumes
+        </button>
+      </div>
 
       <div className="flex-1" />
 
-      <button
-        role="tab"
-        aria-selected={tab==='profile'}
-        className={`px-3 py-2 rounded-t-xl border border-b-0 transition-all
-          ${tab==='profile'
-            ? 'bg-gradient-to-b from-white to-gray-50 shadow-lg ring-1 ring-black/5 translate-y-[1px]'
-            : 'bg-gray-50 text-gray-700 hover:shadow-sm'
-          }`}
-        onClick={()=>setTab('profile')}
-      >
-        My Profile
-      </button>
+      {/* My Profile tab */}
+      <div className="relative">
+        {tab==='profile' && (
+          <div className="absolute -top-1 left-0 right-0 h-1 bg-amber-500 rounded-t" />
+        )}
+        <button
+          role="tab"
+          aria-selected={tab==='profile'}
+          className={`px-3 py-2 rounded-t-xl border border-b-0 transition-all
+            ${tab==='profile'
+              ? 'bg-amber-500 text-white border-amber-600 shadow-lg ring-1 ring-black/5 translate-y-[1px]'
+              : 'bg-gray-50 text-gray-700 hover:shadow-sm'
+            }`}
+          onClick={()=>setTab('profile')}
+        >
+          My Profile
+        </button>
+      </div>
     </div>
   </div>
 </div>
+
 
       {/* Settings (gear) */}
       <div className="mb-4">
