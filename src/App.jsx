@@ -1900,10 +1900,7 @@ useEffect(() => {
     <div className="flex items-end gap-2">
       {/* Resumes tab */}
       <div className="relative">
-        {tab==='prospects' && (
-          <div className="absolute -top-1 left-0 right-0 h-1 bg-amber-500 rounded-t" />
-        )}
-        <button
+               <button
           role="tab"
           aria-selected={tab==='prospects'}
           className={`px-3 py-2 rounded-t-xl border border-b-0 transition-all
@@ -1921,10 +1918,7 @@ useEffect(() => {
 
       {/* My Profile tab */}
       <div className="relative">
-        {tab==='profile' && (
-          <div className="absolute -top-1 left-0 right-0 h-1 bg-amber-500 rounded-t" />
-        )}
-        <button
+               <button
           role="tab"
           aria-selected={tab==='profile'}
           className={`px-3 py-2 rounded-t-xl border border-b-0 transition-all
