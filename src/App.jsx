@@ -1,6 +1,3 @@
-I'm pasting this here because the chat i was using got too long and was slow. this is my app code. no need to respond
-
-
 
 import React, { useEffect, useRef, useState } from "react";
 import localforage from "localforage";
