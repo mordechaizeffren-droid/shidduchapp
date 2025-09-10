@@ -1192,7 +1192,7 @@ function FullProspectEditor({ prospect, allProfiles, onChange, onClose, onDelete
             </div>
           </div>
 {/* Resume + Photos side-by-side */}
-<div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-start">
+<div className="grid grid-cols-2 gap-3 items-start">
   {/* Resume — long-press to Share / Save / Delete */}
   <div>
     <div className="text-xs mb-1">Resume</div>
