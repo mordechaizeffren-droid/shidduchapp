@@ -1416,7 +1416,6 @@ useAutosize(notesRef, p.notes);
       )}
      {Confirm}
 </div>
-</div>
 );
 }
 
