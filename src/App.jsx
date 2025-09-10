@@ -1321,27 +1321,31 @@ function FullProspectEditor({ prospect, allProfiles, onChange, onClose, onDelete
   </div>
 </div>
 
-          {/* Notes */}
-          <div className="mt-2">
-            <div className="text-sm font-medium">Notes</div>
-            <div className="relative">
-              <textarea
-                className="border rounded p-2 w-full text-sm pr-12 select-text placeholder-gray-400"
-                placeholder="Type notes…"
-                rows={3}
-                value={p.notes || ''}
-                onChange={(e) => onChange({ notes: e.target.value })}
-              />
-              <IconBtn
-                ariaLabel="Share notes"
-                label="Share"
-                onClick={() => shareText(p.notes || '')}
-                className="absolute -bottom-3 -left-3 z-20 border-blue-300 text-blue-700 bg-white/90 hover:bg-white"
-              >
-                <IconShare />
-              </IconBtn>
-            </div>
-          </div>
+         {/* Notes */}
+<div className="mt-2">
+  <div className="text-sm font-medium">Notes</div>
+  <div className="relative">
+    <textarea
+      className="border rounded p-2 w-full text-sm pr-12 select-text placeholder-gray-400"
+      placeholder="Type notes…"
+      rows={3}
+      value={p.notes || ''}
+      onChange={(e) => onChange({ notes: e.target.value })}
+      onInput={(e) => {
+        e.target.style.height = "auto";
+        e.target.style.height = `${e.target.scrollHeight}px`;
+      }}
+    />
+    <IconBtn
+      ariaLabel="Share notes"
+      label="Share"
+      onClick={() => shareText(p.notes || '')}
+      className="absolute -bottom-3 -left-3 z-20 border-blue-300 text-blue-700 bg-white/90 hover:bg-white"
+    >
+      <IconShare />
+    </IconBtn>
+  </div>
+</div>
 
           {/* Share all */}
           {hasTwo && (
@@ -1610,13 +1614,23 @@ function MyProfile({ profile, saveProfile }){
             {Confirm}
           </div>
 
-          {/* Blurb — unchanged; Share all logic below remains */}
-          <div className="mt-2 max-w-xl">
-            <div className="text-xs">Blurb</div>
-            <div className="relative">
-              <textarea className="border rounded p-2 w-full text-xs pr-12 select-text placeholder-gray-400" rows={2} value={selected.blurb || ''} onChange={e=>updateProfile(selected.id,{blurb:e.target.value})} placeholder="Type blurb…" />
-            </div>
-          </div>
+         {/* Blurb */}
+<div className="mt-2 max-w-xl">
+  <div className="text-xs">Blurb</div>
+  <div className="relative">
+    <textarea
+      className="border rounded p-2 w-full text-xs select-text placeholder-gray-400"
+      rows={2}
+      value={selected.blurb || ''}
+      onChange={(e)=>updateProfile(selected.id,{blurb:e.target.value})}
+      onInput={(e) => {
+        e.target.style.height = "auto";
+        e.target.style.height = `${e.target.scrollHeight}px`;
+      }}
+      placeholder="Type blurb…"
+    />
+  </div>
+</div>
 
           {/* Share all (unchanged) */}
           {(() => {
