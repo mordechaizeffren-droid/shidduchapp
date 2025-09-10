@@ -1332,16 +1332,9 @@ useAutosize(notesRef, p.notes);
   </div>
 </div>
 
-         function useAutosize(ref, value) {
-  React.useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = `${el.scrollHeight}px`;
-  }, [ref, value]);
-}
-
-      label="Share"
+      <IconBtn
+  ariaLabel="Share notes"
+  label="Share"
       onClick={() => shareText(p.notes || '')}
       className="absolute -bottom-3 -left-3 z-20 border-blue-300 text-blue-700 bg-white/90 hover:bg-white"
     >
