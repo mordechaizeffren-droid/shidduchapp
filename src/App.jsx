@@ -124,11 +124,16 @@ const ExpandIcon = ({ open, ...p }) => (
 const attachFile = async (file) => {
   // Upload to Supabase and return a lightweight ref you can store/sync
   const { id, key, url, size, type, name } = await uploadFile(file);
+
+  // NEW: also cache locally so useFilePreview() can render immediately
+  try { await dbFiles.setItem(id, file); } catch {}
+
   return { id, key, url, size, type, name, addedAt: Date.now() };
 };
 
 const deleteFileRef = async (ref) => {
   try { if (ref?.key) await deleteRef(ref); } catch {}
+  try { if (ref?.id) await dbFiles.removeItem(ref.id); } catch {}
 };
 
 // Download/share via URL instead of blob
