@@ -2,6 +2,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import localforage from "localforage";
 import { fetchRoom, saveRoom, subscribeRoom } from "./lib/sync";
+import { uploadFile, getFileUrl, downloadBlob, removeFile } from "./lib/files";
 
 // =============================================================================
 // Shidduch Organizer — Single File App • v2.0 (Lite, updated)
@@ -119,91 +120,68 @@ const ExpandIcon = ({ open, ...p }) => (
 );
 
 
-// ===== File helpers =====
+// ===== File helpers (Supabase-backed) =====
 const attachFile = async (file) => {
-  const id = uid();
-  await dbFiles.setItem(id, file);
-  return { id, name: file.name, type: file.type, size: file.size, addedAt: Date.now() };
+  // Upload to Supabase and return a lightweight ref you can store/sync
+  const { id, key, url, size, type, name } = await uploadFile(file);
+  return { id, key, url, size, type, name, addedAt: Date.now() };
 };
-
-const getBlobFromRef = async (ref) => (ref?.id ? dbFiles.getItem(ref.id) : null);
 
 const deleteFileRef = async (ref) => {
-  try { if (ref?.id) await dbFiles.removeItem(ref.id); } catch {}
+  try { if (ref?.key) await removeFile(ref.key); } catch {}
 };
 
+const useFilePreview = (fileRef) => {
+  const [url, setUrl] = useState('');
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      if (!fileRef) { setUrl(''); return; }
+      // Get a signed URL (or public URL) from Supabase
+      const u = await getFileUrl(fileRef);
+      if (alive) setUrl(u || '');
+    })();
+    return () => { alive = false; };
+  }, [fileRef?.key, fileRef?.id, fileRef?.url]);
+  return url;
+};
+
+// Download/share via URL instead of blob
 const downloadRef = async (ref) => {
-  const blob = await getBlobFromRef(ref);
-  if (!blob) return;
-  const url = URL.createObjectURL(blob);
+  const url = await getFileUrl(ref); if (!url) return;
   const a = document.createElement("a");
-  a.href = url; a.download = ref.name || "download"; a.click();
-  URL.revokeObjectURL(url);
+  a.href = url; a.download = ref?.name || "download"; a.click();
 };
 
-const shareRef = async (ref, label = "file") => {
+const shareRef = async (ref) => {
+  const url = await getFileUrl(ref); if (!url) return;
+  const navAny = navigator;
   try {
-    const blob = await getBlobFromRef(ref);
-    if (!blob) { alert("File not found in storage"); return; }
-    const fileName = ref.name || "file";
-    const mime = ref.type || "application/octet-stream";
-    const file = new File([blob], fileName, { type: mime });
-    const navAny = navigator;
-
-    if (navAny.share && navAny.canShare && navAny.canShare({ files: [file] })) {
-      try { await navAny.share({ files: [file], title: fileName }); return; } catch (e) { if (e?.name === 'AbortError') return; }
-    }
-
-    const url = URL.createObjectURL(blob);
-    if (navAny.share) {
-      try { await navAny.share({ url, title: fileName }); setTimeout(()=>URL.revokeObjectURL(url), 15000); return; } catch (_) {}
-    }
-
-    const w = window.open(url, '_blank', 'noopener,noreferrer');
-    if (!w) { await downloadRef(ref); setTimeout(()=>URL.revokeObjectURL(url), 0); }
-    else { setTimeout(()=>URL.revokeObjectURL(url), 60000); }
-  } catch (_) { try { await downloadRef(ref); } catch {} }
+    if (navAny.share) { await navAny.share({ url, title: ref?.name || 'file' }); return; }
+  } catch (e) { if (e?.name === 'AbortError') return; }
+  window.open(url, "_blank", "noopener,noreferrer");
 };
 
-const shareText = async (text) => {
-  const t = (text || "").trim(); if (!t) return;
-  try {
-    if (navigator.share) { await navigator.share({ text: t }); return; }
-  } catch (e) { if (e?.name === "AbortError") return; }
-  try { await navigator.clipboard.writeText(t); alert("Copied to clipboard"); } catch {}
-};
-
-// Share all: resume + photos[] + text (notes/blurb), no name
+// Share all (uses URLs)
 const shareAll = async ({ resume, photos, text }) => {
-  const files = [];
+  const urls = [];
+  const r = await getFileUrl(resume); if (r) urls.push(r);
+  for (const ph of ensureArray(photos)) {
+    const u = await getFileUrl(ph);
+    if (u) urls.push(u);
+  }
+  const t = (text || '').trim();
+  const navAny = navigator;
   try {
-    if (resume?.id) {
-      const b = await dbFiles.getItem(resume.id);
-      if (b) files.push(new File([b], resume.name || "resume", { type: resume.type || b.type || "application/octet-stream" }));
+    if (navAny.share) {
+      // Some browsers only accept single url/text
+      if (urls[0]) { await navAny.share({ url: urls[0] }); return; }
+      if (t) { await navAny.share({ text: t }); return; }
     }
-    for (const pr of ensureArray(photos)) {
-      if (!pr?.id) continue;
-      const b = await dbFiles.getItem(pr.id);
-      if (b) files.push(new File([b], pr.name || "photo", { type: pr.type || b.type || "application/octet-stream" }));
-    }
-    const t = (text || "").trim();
-    const navAny = navigator;
-
-    if (navAny.share && (files.length || t)) {
-      try {
-        if (files.length && navAny.canShare && navAny.canShare({ files })) { await navAny.share({ files }); return; }
-        if (t) { await navAny.share({ text: t }); return; }
-      } catch (e) { if (e?.name === "AbortError") return; }
-    }
-    // Fallbacks
-    for (const f of files) {
-      const url = URL.createObjectURL(f);
-      const w = window.open(url, "_blank", "noopener,noreferrer");
-      if (!w) { const a = document.createElement("a"); a.href = url; a.download = f.name || "file"; a.click(); }
-      setTimeout(() => URL.revokeObjectURL(url), 60000);
-    }
-    if (t) { try { await navigator.clipboard.writeText(t); } catch {} }
-  } catch { alert("Share failed. You can still Export from the settings menu."); }
+  } catch (e) { if (e?.name === 'AbortError') return; }
+  // Fallback: open first URL + copy text
+  if (urls[0]) window.open(urls[0], "_blank", "noopener,noreferrer");
+  if (t) { try { await navigator.clipboard.writeText(t); } catch {} }
 };
 
 // ===== Small UI bits =====
@@ -1776,30 +1754,8 @@ useEffect(() => {
   if (applyingRemoteRef.current) { applyingRemoteRef.current = false; return; }
 
   const send = async () => {
-    const ids = new Map();
-    const add = (r) => { if (r?.id) ids.set(r.id, r); };
-
-    add(profile?.resume);
-    ensureArray(profile?.photos).forEach(add);
-    ensureArray(profile?.profiles).forEach(k => {
-      add(k.resume);
-      ensureArray(k.photos).forEach(add);
-    });
-    ensureArray(prospects).forEach(p => {
-      add(p.resume);
-      ensureArray(p.photos).forEach(add);
-    });
-
-    const files = [];
-    for (const ref of ids.values()) {
-      const blob = await dbFiles.getItem(ref.id);
-      if (!blob) continue;
-      const b64 = await fileToBase64(blob);
-      files.push({ ...ref, base64: b64 });
-    }
-
-    await saveRoom(sync.room, { profile, prospects, files, clientId }).catch(() => {});
-  };
+  await saveRoom(sync.room, { profile, prospects, clientId }).catch(() => {});
+};
 
   const t = setTimeout(send, 400);
   return () => clearTimeout(t);
