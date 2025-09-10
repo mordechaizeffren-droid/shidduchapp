@@ -8,7 +8,7 @@ function useAutosize(ref, value) {
     const el = ref.current;
     if (!el) return;
     el.style.height = 'auto';
-    el.style.height = `${el.scrollHeight}px`;
+    el.style.height = String(el.scrollHeight) + 'px';
   }, [ref, value]);
 }
 
