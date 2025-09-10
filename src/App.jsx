@@ -1618,7 +1618,7 @@ useAutosize(blurbRef, selected?.blurb);
   className="border rounded p-2 w-full text-xs select-text placeholder-gray-400 resize-none overflow-hidden"
   rows={2}
   value={selected.blurb || ''}
-  onChange={(e)=>updateProfile(selected.id,{blurb:e.target.value})}
+  onChange={(e)=>updateProfile(selected.id, {blurb:e.target.value})}
  onInput={(e) => {
   e.target.style.height = 'auto';
   e.target.style.height = String(e.target.scrollHeight) + 'px';
