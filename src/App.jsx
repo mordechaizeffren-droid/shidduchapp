@@ -546,19 +546,6 @@ function OpenSystemViewerButton({ fileRef }) {
     </button>
   );
 }
-// --- Simple fit-to-container image (no pinch yet) ---
-function ZoomImg({ src, alt = '', className = '' }) {
-  return (
-    <img
-      src={src}
-      alt={alt}
-      draggable={false}
-      className={`max-w-full max-h-full object-contain select-none ${className}`}
-      style={{ userSelect: 'none', touchAction: 'manipulation' }}
-    />
-  );
-}
-
 
 // ===== Viewer (images OR vertical PDF stack) =====
 function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }) {
