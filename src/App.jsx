@@ -538,6 +538,9 @@ function PdfStack({ fileRef }) {
 
         setState(s => ({ ...s, pageCount, pages: pagesMeta }));
 
+// NEW: let React paint the <canvas> nodes before we start drawing.
+await new Promise(requestAnimationFrame); // or: await new Promise(r => setTimeout(r, 0));
+
         // Render pages sequentially; keep memory reasonable
         for (let i = 1; i <= pageCount; i++) {
           if (cancelled) break;
@@ -547,8 +550,11 @@ function PdfStack({ fileRef }) {
 const v1  = page.getViewport({ scale: 1 });
 
 const metaIdx = i - 1;
-const canvas = document.getElementById(pagesMeta[metaIdx].canvasId);
-if (!canvas) continue;
+const canvas = document.getElementById(state.pages[metaIdx].canvasId);
+if (!canvas) {
+  await new Promise(r => setTimeout(r, 30)); // give React a tick
+  continue;
+}
 const ctx = canvas.getContext('2d', { alpha: false });
 
 // Measure the available CSS width (the div that wraps the canvas)
@@ -753,9 +759,7 @@ onTouchCancel={isImg ? onTouchEnd : undefined}
         ) : isPdf ? (
           // New vertical, scrollable PDF stack (with long-press actions)
           <LongPressShare fileRef={fileRef}>
-  <PinchZoom maxScale={3} onLockChange={setZoomLocked}>
-    <PdfStack fileRef={fileRef} />
-  </PinchZoom>
+  <PdfStack fileRef={fileRef} />
 </LongPressShare>
         ) : (
           <div className="p-6 text-center text-sm text-gray-500">No preview available.</div>
