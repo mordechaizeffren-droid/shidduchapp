@@ -1131,6 +1131,14 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
     </div>
   );
 }
+// --- helpers ---
+function dist(a, b) {
+  const dx = a.clientX - b.clientX, dy = a.clientY - b.clientY;
+  return Math.hypot(dx, dy);
+}
+function clamp(v, lo, hi) {
+  return Math.max(lo, Math.min(hi, v));
+}
 
 // ===== Small menus / actions re-add =====
 function PillMenu({ label, options=[], onPick, strong }) {
