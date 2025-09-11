@@ -713,7 +713,7 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
     return () => { document.body.style.overflow = prev; };
   }, []);
 
-  // Indexing
+  // Indices
   const [idx, setIdx] = React.useState(startIndex || 0);
   React.useEffect(() => setIdx(startIndex || 0), [startIndex, fileRef?.id]);
 
@@ -723,63 +723,67 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
   const [pdfCanvasUrl, setPdfCanvasUrl] = React.useState('');
   const [pdfLoading, setPdfLoading] = React.useState(false);
 
-  // Zoom / pan
+  // Zoom / pan (center-anchored)
   const MIN_ZOOM = 1;
   const MAX_ZOOM = 2.5;
+  const SNAP_EPS  = 0.02; // if zoom is within 2% of 1×, snap to center
   const [z, setZ]   = React.useState(1);
-  const [tx, setTx] = React.useState(0); // persistent pan
+  const [tx, setTx] = React.useState(0); // px offset from screen center
   const [ty, setTy] = React.useState(0);
   const [isPinching, setIsPinching] = React.useState(false);
   const [dragDY, setDragDY] = React.useState(0);
 
-  // Natural/base size (CSS pixels) at z=1 (contain in viewport)
-  const [baseW, setBaseW] = React.useState(0);
-  const [baseH, setBaseH] = React.useState(0);
+  // Natural pixel size (source image) for correct clamping
+  const [natW, setNatW] = React.useState(0);
+  const [natH, setNatH] = React.useState(0);
 
-  // Reset view when source changes
+  // Reset when source changes
   const resetView = React.useCallback(() => {
     setZ(1); setTx(0); setTy(0); setDragDY(0);
   }, []);
   React.useEffect(() => { resetView(); }, [idx, pdfPage, resetView, fileRef?.id]);
 
   // Close only when zoomed out
-  const canClose = z === 1 && !isPinching;
+  const canClose = Math.abs(z - 1) <= SNAP_EPS && !isPinching;
 
   // Current image URL
   const currentPhotoRef = isImg ? (photos.length ? photos[idx % photos.length] : fileRef) : null;
   const currentPhotoUrl = useFilePreview(currentPhotoRef || null);
 
-  // Compute clamp for pan based on the **viewport** (so edges = screen edges)
-  const clampPan = React.useCallback((nx, ny, nextZ = z) => {
+  // Compute "contain" base render size (in CSS pixels) and clamp pan **against viewport edges**
+  const getContainBase = React.useCallback(() => {
     const vw = window.innerWidth  || 360;
     const vh = window.innerHeight || 640;
+    if (!natW || !natH) return { baseW: vw, baseH: vh, vw, vh };
+    const scale = Math.min(vw / natW, vh / natH);
+    return { baseW: natW * scale, baseH: natH * scale, vw, vh };
+  }, [natW, natH]);
+
+  const clampPan = React.useCallback((nx, ny, nextZ = z) => {
+    const { baseW, baseH, vw, vh } = getContainBase();
     const showW = baseW * nextZ;
     const showH = baseH * nextZ;
-
-    // How far content may extend beyond viewport when centered
+    // how far content can extend beyond viewport when centered
     const maxX = Math.max(0, (showW - vw) / 2);
     const maxY = Math.max(0, (showH - vh) / 2);
-
     return [clamp(nx, -maxX, maxX), clamp(ny, -maxY, maxY)];
-  }, [baseW, baseH, z]);
+  }, [getContainBase, z]);
 
-  // PDF render → dataURL + set baseW/baseH for contain fit
+  // Load/render PDF → dataURL; set natW/natH from rendered bitmap
   React.useEffect(() => {
     let cancelled = false;
     (async () => {
       if (!isPdf || !fileRef?.id) return;
-
       setPdfLoading(true);
       setPdfCanvasUrl('');
 
       try {
         const blob = await dbFiles.getItem(fileRef.id);
         const ab = blob ? await blob.arrayBuffer() : null;
-
         const pdfjs = await loadPdfjs();
         const src = ab ? { data: ab } : { url: await viewUrl(fileRef) };
         const doc = await pdfjs.getDocument(src).promise;
-        if (cancelled) { try { doc.destroy?.(); } catch {} ; return; }
+        if (cancelled) return;
 
         const total = doc.numPages || 1;
         setPdfPages(total);
@@ -788,7 +792,6 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
         const page = await doc.getPage(pageNum);
 
         const vw = Math.max(320, window.innerWidth || 320);
-        const vh = Math.max(320, window.innerHeight || 320);
         const v1 = page.getViewport({ scale: 1 });
         const dpr = Math.max(1, window.devicePixelRatio || 1);
         const scale = (vw / v1.width) * dpr;
@@ -798,7 +801,6 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
         const ctx = canvas.getContext('2d', { alpha: false });
         canvas.width = Math.floor(viewport.width);
         canvas.height = Math.floor(viewport.height);
-
         await page.render({ canvasContext: ctx, viewport }).promise;
         if (cancelled) return;
 
@@ -806,12 +808,10 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
         setPdfCanvasUrl(url);
         setPdfLoading(false);
 
-        // Base size at z=1 (contain → width fits viewport)
-        const cssW = vw;
-        const cssH = Math.min(vh, vw * (v1.height / v1.width));
-        setBaseW(cssW);
-        setBaseH(cssH);
-        setTx(0); setTy(0); // start centered
+        // Use the bitmap size as natural size
+        setNatW(canvas.width / dpr);
+        setNatH(canvas.height / dpr);
+        setTx(0); setTy(0); // centered at 1×
       } catch {
         if (!cancelled) setPdfLoading(false);
       }
@@ -820,19 +820,14 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isPdf, fileRef?.id, pdfPage]);
 
-  // For images, set baseW/baseH once the image loads (contain)
+  // For images, get natural size on load
   const imgRef = React.useRef(null);
   const onImgLoad = React.useCallback(() => {
     const el = imgRef.current;
     if (!el) return;
-    const vw = window.innerWidth || 360;
-    const vh = window.innerHeight || 640;
-    const nw = el.naturalWidth  || vw;
-    const nh = el.naturalHeight || vh;
-    const scale = Math.min(vw / nw, vh / nh);
-    setBaseW(nw * scale);
-    setBaseH(nh * scale);
-    setTx(0); setTy(0); // centered at 1×
+    setNatW(el.naturalWidth || 0);
+    setNatH(el.naturalHeight || 0);
+    setTx(0); setTy(0);
   }, []);
 
   // Gestures
@@ -859,9 +854,12 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
       const [a,b] = e.touches;
       const p = pinchRefLocal.current;
       const d1 = dist(a, b);
-      const nextZ = clamp(p.z0 * (d1 / p.d0), MIN_ZOOM, MAX_ZOOM);
+      let nextZ = clamp(p.z0 * (d1 / p.d0), MIN_ZOOM, MAX_ZOOM);
+
+      // Snap near 1×
+      if (Math.abs(nextZ - 1) <= SNAP_EPS) nextZ = 1;
+
       setZ(nextZ);
-      // Keep pan within viewport while changing zoom
       const [nx, ny] = clampPan(tx, ty, nextZ);
       setTx(nx); setTy(ny);
       setDragDY(0);
@@ -874,15 +872,14 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
     const dy = t.clientY - dragRef.current.sy;
     dragRef.current = { ...dragRef.current, dx, dy };
 
-    if (z > 1) {
-      // Persistent pan (incrementally update, clamped to viewport)
-      const [nx, ny] = clampPan(tx + dx, ty + dy);
+    if (z > 1 + SNAP_EPS) {
+      const [nx, ny] = clampPan(tx + dx, ty + dy, z);
       setTx(nx); setTy(ny);
       setDragDY(0);
       dragRef.current.sx = t.clientX;
       dragRef.current.sy = t.clientY;
     } else {
-      // Visual slide/fade for dismiss at 1×
+      // visual drag-to-dismiss at ~1×
       setDragDY(Math.max(0, dy));
     }
   };
@@ -891,15 +888,14 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
     if (pinchRefLocal.current) {
       setIsPinching(false);
       pinchRefLocal.current = null;
-      // If we ended a pinch and landed at 1×, snap pan to center
-      if (z === 1) { setTx(0); setTy(0); }
+      if (Math.abs(z - 1) <= SNAP_EPS) { setZ(1); setTx(0); setTy(0); }
       return;
     }
     const { active, dx, dy } = dragRef.current;
     if (!active) return;
     dragRef.current.active = false;
 
-    if (z > 1) { setDragDY(0); return; } // keep tx/ty
+    if (z > 1 + SNAP_EPS) { setDragDY(0); return; } // keep pan
 
     const ax = Math.abs(dx), ay = Math.abs(dy);
     if (canClose && ay - ax > ANGLE && dy > VERT) { onClose?.(); return; }
@@ -925,7 +921,7 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
   React.useEffect(() => {
     const onKey = (e) => {
       if (e.key === 'Escape' && canClose) onClose?.();
-      if (z > 1) return;
+      if (z > 1 + SNAP_EPS) return;
       if (e.key === 'ArrowLeft') {
         if (isImg && photos.length) setIdx(i => (i - 1 + photos.length) % photos.length);
         if (isPdf && pdfPages) setPdfPage(p => (p - 1 < 1 ? pdfPages : p - 1));
@@ -939,16 +935,16 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
     return () => window.removeEventListener('keydown', onKey);
   }, [canClose, z, isImg, isPdf, photos.length, pdfPages, onClose]);
 
-  // Double-tap zoom toggle (snap pan to center when returning to 1×)
+  // Double-tap zoom toggle (snap to center when returning to ~1×)
   const lastTapRef = React.useRef(0);
   const onDoubleTap = () => {
     const now = Date.now();
     if (now - lastTapRef.current < 280) {
       setZ(v => {
-        const next = v === 1 ? 2 : 1;
-        if (next === 1) { setTx(0); setTy(0); }       // snap back to centered
+        const next = v <= 1 + SNAP_EPS ? 2 : 1;
+        if (next === 1) { setTx(0); setTy(0); }
         else {
-          const [nx, ny] = clampPan(tx, ty, next);   // clamp for new zoom
+          const [nx, ny] = clampPan(tx, ty, next);
           setTx(nx); setTy(ny);
         }
         return next;
@@ -969,9 +965,10 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
   const bgAlpha  = 0.90 * (1 - progress);
   const translateY = dragDY ? `${dragDY}px` : '0px';
 
+  // Absolute, center-anchored content so the viewport is the only boundary
   return (
     <div
-      className="fixed inset-0 z-[3000] text-white grid place-items-center"
+      className="fixed inset-0 z-[3000] text-white"
       role="dialog"
       aria-label="Viewer"
       onTouchStart={onTouchStart}
@@ -986,10 +983,7 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
       }}
     >
       <LongPressShare fileRef={isImg ? (photos.length ? photos[idx] : fileRef) : fileRef} onDelete={isImg ? handleDelete : undefined}>
-        <div
-          className="w-full h-full overflow-hidden flex items-center justify-center select-none"
-          style={{ touchAction: 'none' }}
-        >
+        <div className="absolute inset-0 overflow-hidden select-none" style={{ touchAction: 'none' }}>
           {/* IMAGES */}
           {isImg ? (
             currentPhotoUrl ? (
@@ -1002,24 +996,27 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
                 draggable={false}
                 className="block"
                 style={{
-                  width: baseW ? `${baseW}px` : 'auto',
-                  height: baseH ? `${baseH}px` : 'auto',
+                  position: 'absolute',
+                  left: '50%',
+                  top: '50%',
+                  // center-anchored + pan + zoom
+                  transform: `translate(calc(-50% + ${tx}px), calc(-50% + ${ty}px)) scale(${z})`,
+                  transformOrigin: 'center center',
+                  // contain at 1×, but allow grow with scale
                   maxWidth: '100vw',
                   maxHeight: '100vh',
-                  transform: `translate(${tx}px, ${ty}px) scale(${z})`,
-                  transformOrigin: 'center center',
                   objectFit: 'contain'
                 }}
               />
             ) : (
-              <div className="text-sm text-gray-200">Loading…</div>
+              <div className="absolute inset-0 grid place-items-center text-sm text-gray-200">Loading…</div>
             )
           ) : null}
 
           {/* PDF */}
           {isPdf ? (
             pdfLoading ? (
-              <div className="text-sm text-gray-200">Loading…</div>
+              <div className="absolute inset-0 grid place-items-center text-sm text-gray-200">Loading…</div>
             ) : pdfCanvasUrl ? (
               <img
                 key={`pdf-${pdfPage}-${fileRef?.id || ''}`}
@@ -1028,23 +1025,24 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
                 draggable={false}
                 className="block"
                 style={{
-                  width: baseW ? `${baseW}px` : '100vw',
-                  height: baseH ? `${baseH}px` : 'auto',
+                  position: 'absolute',
+                  left: '50%',
+                  top: '50%',
+                  transform: `translate(calc(-50% + ${tx}px), calc(-50% + ${ty}px)) scale(${z})`,
+                  transformOrigin: 'center center',
                   maxWidth: '100vw',
                   maxHeight: '100vh',
-                  transform: `translate(${tx}px, ${ty}px) scale(${z})`,
-                  transformOrigin: 'center center',
                   objectFit: 'contain'
                 }}
               />
             ) : (
-              <div className="text-sm text-gray-200">Unable to render PDF.</div>
+              <div className="absolute inset-0 grid place-items-center text-sm text-gray-200">Unable to render PDF.</div>
             )
           ) : null}
 
           {/* Fallback */}
           {!isImg && !isPdf ? (
-            <div className="text-center px-6">
+            <div className="absolute inset-0 grid place-items-center text-center px-6">
               <div className="text-sm text-gray-200 mb-2">Can’t preview this file type.</div>
               <button
                 className="px-3 py-1 rounded border border-white/30"
