@@ -2111,7 +2111,7 @@ useAutosize(blurbRef, selected?.blurb);
       {selected ? (
         <>
           <div className="grid grid-cols-2 gap-2">
-         /* Resume — simplified (now with Delete via long-press) */
+    {/* Resume — simplified (now with Delete via long-press) */}
 <div>
   <div className="text-xs mb-1">Resume</div>
 
@@ -2165,7 +2165,7 @@ useAutosize(blurbRef, selected?.blurb);
     </button>
   )}
 </div>
-
+  
             {/* Photos (no share/download buttons; long-press to share/save) */}
             <div>
               <div className="text-xs mb-1">Photos</div>
