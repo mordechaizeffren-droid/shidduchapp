@@ -725,7 +725,7 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
 
   // Zoom / pan (center-anchored; pan = px offset from screen center)
   const MIN_ZOOM = 1;
-  const MAX_ZOOM = 2.5; // step 2 can raise this
+  const MAX_ZOOM = 4.5;  // ⟵ raised from 2.5× to ~4–5×
   const SNAP_EPS  = 0.02; // treat 0.98–1.02 as 1× for close + snap
   const [z, setZ]   = React.useState(1);
   const [tx, setTx] = React.useState(0);
@@ -768,15 +768,11 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
   }, [getContainBase, z]);
 
   // --- Finger-anchored pinch bookkeeping ---
-  // We preserve the *content point under the pinch center* across zoom.
   const pinchRef = React.useRef(null);
-  // Utility: content coords of a screen point at current transform
   const screenToContent = React.useCallback((sx, sy, zNow = z, txNow = tx, tyNow = ty) => {
     const { vw, vh } = getContainBase();
-    // screen delta from viewport center
     const dx = sx - vw / 2;
     const dy = sy - vh / 2;
-    // content coords relative to content center
     return { cx: (dx - txNow) / zNow, cy: (dy - tyNow) / zNow };
   }, [getContainBase, z, tx, ty]);
 
@@ -818,7 +814,6 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
         setPdfCanvasUrl(url);
         setPdfLoading(false);
 
-        // nat size in CSS px for contain calc
         setNatW(canvas.width / dpr);
         setNatH(canvas.height / dpr);
         setTx(0); setTy(0);
@@ -849,15 +844,10 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
       const [a,b] = e.touches;
       const cx = (a.clientX + b.clientX) / 2;
       const cy = (a.clientY + b.clientY) / 2;
-      const anchor = screenToContent(cx, cy, z, tx, ty); // content point under fingers
-      pinchRef.current = {
-        d0: dist(a, b),
-        z0: z,
-        cx, cy,
-        anchor // {cx, cy}
-      };
+      const anchor = screenToContent(cx, cy, z, tx, ty);
+      pinchRef.current = { d0: dist(a, b), z0: z, cx, cy, anchor };
       setIsPinching(true);
-      dragRef.current.active = false; // pinch takes over
+      dragRef.current.active = false;
       return;
     }
     if (e.touches.length !== 1) return;
@@ -867,7 +857,6 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
   };
 
   const onTouchMove = (e) => {
-    // Pinch: zoom around the finger center, keeping the content point fixed
     if (pinchRef.current && e.touches.length === 2) {
       const [a,b] = e.touches;
       const p = pinchRef.current;
@@ -875,15 +864,10 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
       let nextZ = clamp(p.z0 * (d1 / p.d0), MIN_ZOOM, MAX_ZOOM);
       if (Math.abs(nextZ - 1) <= SNAP_EPS) nextZ = 1;
 
-      // Keep the same screen point (p.cx, p.cy) anchored to the same content point
       const { vw, vh } = getContainBase();
-      const sx = p.cx - vw / 2, sy = p.cy - vh / 2; // screen delta from center
-      // content point captured at pinch start: p.anchor = {cx, cy}
-      // s = t + z * c  →  t' = s - z' * c
+      const sx = p.cx - vw / 2, sy = p.cy - vh / 2;
       let nextTx = sx - nextZ * p.anchor.cx;
       let nextTy = sy - nextZ * p.anchor.cy;
-
-      // Clamp pan to viewport edges at this zoom
       [nextTx, nextTy] = clampPan(nextTx, nextTy, nextZ);
 
       setZ(nextZ);
@@ -901,15 +885,12 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
     dragRef.current = { ...dragRef.current, dx, dy };
 
     if (z > 1 + SNAP_EPS) {
-      // Pan (incremental), clamped to viewport
       const [nx, ny] = clampPan(tx + dx, ty + dy, z);
       setTx(nx); setTy(ny);
       setDragDY(0);
-      // rebase gesture so it feels continuous
       dragRef.current.sx = t.clientX;
       dragRef.current.sy = t.clientY;
     } else {
-      // visual drag-to-dismiss at ~1×
       setDragDY(Math.max(0, dy));
     }
   };
@@ -925,7 +906,7 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
     if (!active) return;
     dragRef.current.active = false;
 
-    if (z > 1 + SNAP_EPS) { setDragDY(0); return; } // keep pan
+    if (z > 1 + SNAP_EPS) { setDragDY(0); return; }
 
     const ax = Math.abs(dx), ay = Math.abs(dy);
     if (canClose && ay - ax > ANGLE && dy > VERT) { onClose?.(); return; }
@@ -961,13 +942,15 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
     return () => window.removeEventListener('keydown', onKey);
   }, [canClose, z, isImg, isPdf, photos.length, pdfPages, onClose]);
 
-  // Double-tap (still center-anchored in Step 1; tap-to-point comes in Step 4)
+  // Double-tap (center-anchored for now; Step 4 will target tap point)
   const lastTapRef = React.useRef(0);
   const onDoubleTap = () => {
     const now = Date.now();
     if (now - lastTapRef.current < 280) {
       setZ(v => {
-        const next = v <= 1 + SNAP_EPS ? 2 : 1;
+        // Jump to a reasonable deep zoom (e.g. 2.5×) the first time; back to 1× next time.
+        const targetIn  = Math.min(2.5, MAX_ZOOM);
+        const next = v <= 1 + SNAP_EPS ? targetIn : 1;
         if (next === 1) { setTx(0); setTy(0); }
         else {
           const [nx, ny] = clampPan(tx, ty, next);
