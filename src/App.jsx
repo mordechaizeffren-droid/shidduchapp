@@ -522,40 +522,28 @@ function PdfStack({ fileRef }) {
       try {
         const pdfjs = await loadPdfjs();
 
-// Try Blob first; if missing, fall back to direct URL.
-// If worker has issues (Safari/iOS), retry once without worker.
-let docTask, docUrl = null, blob = null;
-
-blob = await getPdfBlobFromRef(fileRef);
-if (blob) {
-  const ab = await blob.arrayBuffer();
-  docTask = pdfjs.getDocument({ data: ab });
+// Always feed pdf.js raw data; avoid worker URL fetch/CORS weirdness
+let ab = null;
+const cachedBlob = await getPdfBlobFromRef(fileRef);
+if (cachedBlob) {
+  ab = await cachedBlob.arrayBuffer();
 } else {
-  docUrl = await viewUrl(fileRef);
-  if (!docUrl) throw new Error('no-source');
-  docTask = pdfjs.getDocument({ url: docUrl, withCredentials: false });
+  const url = await viewUrl(fileRef);
+  if (!url) throw new Error('no-source');
+  const resp = await fetch(url, { credentials: 'omit' });
+  if (!resp.ok) throw new Error('fetch-failed');
+  ab = await resp.arrayBuffer();
 }
 
-try {
-  doc = await docTask.promise;
-} catch (e) {
-  try {
-    pdfjs.disableWorker = true;
-    if (blob) {
-      const ab = await blob.arrayBuffer();
-      doc = await pdfjs.getDocument({ data: ab }).promise;
-    } else {
-      if (!docUrl) docUrl = await viewUrl(fileRef);
-      if (!docUrl) throw e;
-      doc = await pdfjs.getDocument({ url: docUrl, withCredentials: false }).promise;
-    }
-  } catch (err) {
-    if (!cancelled) setState({ loading: false, pages: [], pageCount: 0, error: String(err?.message || 'pdf-failed') });
-    return;
-  } finally {
-    pdfjs.disableWorker = false;
-  }
-}
+// Keep worker enabled (faster); also make iOS happier
+const loadingTask = pdfjs.getDocument({
+  data: ab,
+  isEvalSupported: false,          // iOS/Safari safety
+  useSystemFonts: true
+});
+
+doc = await loadingTask.promise;
+
         if (cancelled) { try { doc.destroy?.(); } catch {} return; }
 
         const pageCount = doc.numPages || 0;
