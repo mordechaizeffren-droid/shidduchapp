@@ -70,6 +70,39 @@ const base64ToBlob = (b64, type = 'application/octet-stream') => {
   for (let i = 0; i < s.length; i++) a[i] = s.charCodeAt(i);
   return new Blob([a], { type });
 };
+
+/* === MERGE HELPERS (new) =============================================== */
+
+/** Merge two arrays of objects with {id, updatedAt}, prefer newer by updatedAt. */
+function mergeByIdUpdatedAt(localArr, incomingArr) {
+  const local = ensureArray(localArr);
+  const incoming = ensureArray(incomingArr);
+  const map = new Map(local.map(x => [x.id, x]));
+  for (const it of incoming) {
+    const cur = map.get(it.id);
+    if (!cur) {
+      map.set(it.id, it);
+    } else {
+      const a = Number(cur.updatedAt || 0);
+      const b = Number(it.updatedAt || 0);
+      map.set(it.id, b > a ? it : cur);
+    }
+  }
+  return Array.from(map.values());
+}
+
+/** Merge two profiles (object with .profiles array). Prefer newer top-level by updatedAt; merge inner profiles by id. */
+function mergeProfileTop(localProf, incomingProf) {
+  const l = localProf || {};
+  const r = incomingProf || {};
+  const lTime = Number(l.updatedAt || 0);
+  const rTime = Number(r.updatedAt || 0);
+  const base = rTime > lTime ? { ...l, ...r } : { ...r, ...l }; // newer wins for top-level scalars
+  base.profiles = mergeByIdUpdatedAt(ensureArray(l.profiles), ensureArray(r.profiles));
+  return base;
+}
+/* === END MERGE HELPERS ================================================== */
+
 // ===== Icons =====
 const IconBtn = ({ label, onClick, className = "", children, ariaLabel, disabled }) => (
   <button
@@ -2385,9 +2418,7 @@ useEffect(() => {
     }catch{}
   };
 
-  // === START REPLACE: Minimal cloud sync section ===
-
-// Minimal cloud sync: initial fetch
+// Minimal cloud sync: initial fetch (MERGE, not overwrite)
 useEffect(() => {
   let cancelled = false;
   (async () => {
@@ -2395,6 +2426,7 @@ useEffect(() => {
     const cloud = await fetchRoom(sync.room);
     if (!cloud || cancelled) return;
 
+    // Normalize cloud profile
     let prof = cloud.profile;
     if (prof?.kids && !prof.profiles) {
       prof = {
@@ -2407,20 +2439,24 @@ useEffect(() => {
         kids: undefined
       };
     }
-    if (prof) setProfile(prof);
+    if (!Array.isArray(prof?.profiles)) prof = prof ? { ...prof, profiles: [] } : { profiles: [] };
 
+    // Normalize cloud prospects
     let list = Array.isArray(cloud.prospects) ? cloud.prospects : [];
     list = list.map(it =>
       !Array.isArray(it.photos)
         ? { ...it, photos: it.photo ? [it.photo] : [], photo: undefined, profileId: it.profileId || it.kidId }
         : it
     );
-    setProspects(list);
+
+    // MERGE into local, do not overwrite
+    setProfile(prev => mergeProfileTop(prev, prof || {}));
+    setProspects(prev => mergeByIdUpdatedAt(prev, list));
   })();
   return () => { cancelled = true; };
 }, [sync?.room]);
 
-// Sync receive (subscribe)
+// Sync receive (subscribe) — MERGE incoming, don't overwrite
 useEffect(() => {
   if (!sync?.room) return;
   const unsub = subscribeRoom(sync.room, async (payload) => {
@@ -2428,10 +2464,17 @@ useEffect(() => {
     applyingRemoteRef.current = true;
     lastAppliedRef.current = Date.now();
 
-    if (payload.profile) setProfile(payload.profile);
-    if (Array.isArray(payload.prospects)) setProspects(payload.prospects);
+    // Merge profile (top-level newest wins, inner .profiles by id/updatedAt)
+    if (payload.profile) {
+      setProfile(prev => mergeProfileTop(prev, payload.profile));
+    }
 
-    // NEW: handle incoming files
+    // Merge prospects by id/updatedAt
+    if (Array.isArray(payload.prospects)) {
+      setProspects(prev => mergeByIdUpdatedAt(prev, payload.prospects));
+    }
+
+    // Handle incoming files (unchanged)
     if (Array.isArray(payload.files)) {
       for (const f of payload.files) {
         try {
