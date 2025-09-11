@@ -699,9 +699,6 @@ function OpenSystemViewerButton({ fileRef }) {
   );
 }
 
-  // // --- helpers ---
-function dist(a, b) { const dx = a.clientX - b.clientX, dy = a.clientY - b.clientY; return Math.hypot(dx, dy); }
-function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 // ===== Viewer (full-screen overlay; images & PDFs; swipe nav; pinch zoom) =====
 function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }) {
   // Identify type
