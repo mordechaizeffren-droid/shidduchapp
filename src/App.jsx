@@ -1607,6 +1607,18 @@ function LongPressShare({ fileRef, onDelete, children, delay = 500 }) {
   const tRef = React.useRef(null);
   const movedRef = React.useRef(false);
 
+  const closeMenu = React.useCallback(() => {
+    setMenu(m => ({ ...m, open: false }));
+  }, []);
+
+  // Close on Escape as well
+  React.useEffect(() => {
+    if (!menu.open) return;
+    const onKey = (e) => { if (e.key === 'Escape') closeMenu(); };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [menu.open, closeMenu]);
+
   const clear = () => { if (tRef.current) { clearTimeout(tRef.current); tRef.current = null; } };
 
   const start = (clientX, clientY) => {
@@ -1649,40 +1661,40 @@ function LongPressShare({ fileRef, onDelete, children, delay = 500 }) {
       </div>
 
       {menu.open && (
-        <div
-          className="fixed z-[5000] bg-white border rounded shadow text-sm"
-          style={{ left: menu.x, top: menu.y }}
-        >
-          <button
-            className="block w-full px-3 py-2 hover:bg-gray-100"
-            onClick={() => { shareRef(menu.file); setMenu({ ...menu, open: false }); }}
+        <>
+          {/* Backdrop to allow tap-outside-to-dismiss */}
+          <div
+            className="fixed inset-0 z-[4999]"
+            onClick={closeMenu}
+          />
+
+          {/* Context menu */}
+          <div
+            className="fixed z-[5000] bg-white text-gray-900 border rounded shadow text-sm"
+            style={{ left: menu.x, top: menu.y }}
           >
-            Share
-          </button>
-          <button
-            className="block w-full px-3 py-2 hover:bg-gray-100"
-            onClick={() => { downloadRef(menu.file); setMenu({ ...menu, open: false }); }}
-          >
-            Save
-          </button>
-          {onDelete && (
             <button
-              className="block w-full px-3 py-2 text-rose-600 hover:bg-rose-50"
-              onClick={async () => {
-                await onDelete(menu.file);
-                setMenu({ ...menu, open: false });
-              }}
+              className="block w-full px-3 py-2 text-left hover:bg-gray-100"
+              onClick={() => { shareRef(menu.file); closeMenu(); }}
             >
-              Delete
+              Share
             </button>
-          )}
-          <button
-            className="block w-full px-3 py-2 text-gray-500 hover:bg-gray-50"
-            onClick={() => setMenu({ ...menu, open: false })}
-          >
-            Cancel
-          </button>
-        </div>
+            <button
+              className="block w-full px-3 py-2 text-left hover:bg-gray-100"
+              onClick={() => { downloadRef(menu.file); closeMenu(); }}
+            >
+              Save
+            </button>
+            {onDelete && (
+              <button
+                className="block w-full px-3 py-2 text-left text-rose-600 hover:bg-rose-50"
+                onClick={async () => { await onDelete(menu.file); closeMenu(); }}
+              >
+                Delete
+              </button>
+            )}
+          </div>
+        </>
       )}
     </>
   );
