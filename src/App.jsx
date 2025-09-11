@@ -698,20 +698,6 @@ function OpenSystemViewerButton({ fileRef }) {
     </button>
   );
 }
-// ===== Viewer (full-screen overlay; images & PDFs; swipe nav; pinch zoom) =====
-function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }) {
-  // Identify type
-  const name = (fileRef?.name || '').toLowerCase();
-  const type = (fileRef?.type || '').toLowerCase();
-  const isImg = type.startsWith('image/');
-  const isPdf = type === 'application/pdf' || name.endsWith('.pdf');
-
-  // Body scroll lock while viewer is open
-  React.useEffect(() => {
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => { document.body.style.overflow = prev; };
-  }, []);
 
   // Indexing for images (carousel) and PDFs (pages)
   const [idx, setIdx] = React.useState(startIndex || 0);
@@ -1009,6 +995,372 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
           ) : null}
 
           {/* Fallback for other types */}
+          {!isImg && !isPdf ? (
+            <div className="text-center px-6">
+              <div className="text-sm text-gray-200 mb-2">Can’t preview this file type.</div>
+              <button
+                className="px-3 py-1 rounded border border-white/30"
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  const url = await viewUrl(fileRef);
+                  if (url) window.open(url, '_blank', 'noopener,noreferrer');
+                }}
+              >
+                Open externally
+              </button>
+            </div>
+          ) : null}
+        </div>
+      </LongPressShare>
+    </div>
+  );
+}
+
+// --- helpers ---
+function dist(a, b) { const dx = a.clientX - b.clientX, dy = a.clientY - b.clientY; return Math.hypot(dx, dy); }
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+// ===== Viewer (full-screen overlay; images & PDFs; swipe nav; pinch zoom) =====
+function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }) {
+  // Identify type
+  const name = (fileRef?.name || '').toLowerCase();
+  const type = (fileRef?.type || '').toLowerCase();
+  const isImg = type.startsWith('image/');
+  const isPdf = type === 'application/pdf' || name.endsWith('.pdf');
+
+  // Lock background scroll
+  React.useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, []);
+
+  // Indexing
+  const [idx, setIdx] = React.useState(startIndex || 0);
+  React.useEffect(() => setIdx(startIndex || 0), [startIndex, fileRef?.id]);
+
+  // PDF state
+  const [pdfPage, setPdfPage] = React.useState(1);
+  const [pdfPages, setPdfPages] = React.useState(null);
+  const [pdfCanvasUrl, setPdfCanvasUrl] = React.useState('');
+  const [pdfLoading, setPdfLoading] = React.useState(false);
+  const [pdfDocRef, setPdfDocRef] = React.useState(null);
+
+  // Zoom / pan
+  const MIN_ZOOM = 1;
+  const MAX_ZOOM = 2.5;
+  const [z, setZ]   = React.useState(1);
+  const [tx, setTx] = React.useState(0); // persistent
+  const [ty, setTy] = React.useState(0); // persistent
+  const [isPinching, setIsPinching] = React.useState(false);
+  const [dragDY, setDragDY] = React.useState(0);
+
+  // Natural/base size of the displayed content at z=1 (CSS pixels)
+  const [baseW, setBaseW] = React.useState(0);
+  const [baseH, setBaseH] = React.useState(0);
+
+  // Reset view when source changes
+  const resetView = React.useCallback(() => {
+    setZ(1); setTx(0); setTy(0); setDragDY(0);
+  }, []);
+  React.useEffect(() => { resetView(); }, [idx, pdfPage, resetView, fileRef?.id]);
+
+  // Close only when zoomed out
+  const canClose = z === 1 && !isPinching;
+
+  // Current image URL
+  const currentPhotoRef = isImg ? (photos.length ? photos[idx % photos.length] : fileRef) : null;
+  const currentPhotoUrl = useFilePreview(currentPhotoRef || null);
+
+  // Compute clamp for pan based on base size and zoom
+  const clampPan = React.useCallback((nx, ny) => {
+    const vw = window.innerWidth || 360;
+    const vh = window.innerHeight || 640;
+    const showW = baseW * z;
+    const showH = baseH * z;
+    // when content smaller than viewport on an axis, no pan on that axis
+    const maxX = Math.max(0, (showW - baseW) / 2);
+    const maxY = Math.max(0, (showH - baseH) / 2);
+    return [clamp(nx, -maxX, maxX), clamp(ny, -maxY, maxY)];
+  }, [baseW, baseH, z]);
+
+  // PDF render → dataURL, and set baseW/baseH to centered fit (contain)
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!isPdf || !fileRef?.id) return;
+
+      setPdfLoading(true);
+      setPdfCanvasUrl('');
+
+      try {
+        const blob = await dbFiles.getItem(fileRef.id);
+        const ab = blob ? await blob.arrayBuffer() : null;
+
+        const pdfjs = await loadPdfjs();
+        const src = ab ? { data: ab } : { url: await viewUrl(fileRef) };
+        const doc = await pdfjs.getDocument(src).promise;
+        if (cancelled) { try { doc.destroy?.(); } catch {} ; return; }
+        setPdfDocRef(doc);
+
+        const total = doc.numPages || 1;
+        setPdfPages(total);
+
+        const pageNum = Math.max(1, Math.min(pdfPage, total));
+        const page = await doc.getPage(pageNum);
+
+        // Fit-to-width render at device pixel ratio for crispness
+        const vw = Math.max(320, window.innerWidth || 320);
+        const vh = Math.max(320, window.innerHeight || 320);
+        const v1 = page.getViewport({ scale: 1 });
+        const dpr = Math.max(1, window.devicePixelRatio || 1);
+
+        // We fit to width, then compute CSS base size (centered by container)
+        const scale = (vw / v1.width) * dpr;
+        const viewport = page.getViewport({ scale });
+
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d', { alpha: false });
+        canvas.width = Math.floor(viewport.width);
+        canvas.height = Math.floor(viewport.height);
+
+        await page.render({ canvasContext: ctx, viewport }).promise;
+        if (cancelled) { try { doc.destroy?.(); } catch {} ; return; }
+
+        const url = canvas.toDataURL('image/png');
+        setPdfCanvasUrl(url);
+        setPdfLoading(false);
+
+        // CSS base size at z=1 (contain: width fits viewport)
+        const cssW = vw;
+        const cssH = Math.min(vh, vw * (v1.height / v1.width));
+        setBaseW(cssW);
+        setBaseH(cssH);
+        setTx(0); setTy(0); // ensure centered
+      } catch {
+        if (!cancelled) setPdfLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPdf, fileRef?.id, pdfPage]);
+
+  // For images, set baseW/baseH from natural size once the image loads
+  const imgRef = React.useRef(null);
+  const onImgLoad = React.useCallback(() => {
+    const el = imgRef.current;
+    if (!el) return;
+    const vw = window.innerWidth || 360;
+    const vh = window.innerHeight || 640;
+    const nw = el.naturalWidth || vw;
+    const nh = el.naturalHeight || vh;
+    // contain: fit within viewport
+    const scale = Math.min(vw / nw, vh / nh);
+    setBaseW(nw * scale);
+    setBaseH(nh * scale);
+    setTx(0); setTy(0); // ensure centered
+  }, []);
+
+  // Gestures
+  const HORIZ = 60, VERT = 80, ANGLE = 15;
+  const dragRef = React.useRef({ active:false, sx:0, sy:0, dx:0, dy:0 });
+  const pinchRefLocal = React.useRef(null);
+
+  const onTouchStart = (e) => {
+    if (e.touches.length === 2) {
+      const [a,b] = e.touches;
+      dragRef.current = { active:false, sx:0, sy:0, dx:0, dy:0 };
+      pinchRefLocal.current = { d0: dist(a, b), z0: z };
+      setIsPinching(true);
+      return;
+    }
+    if (e.touches.length !== 1) return;
+    pinchRefLocal.current = null;
+    const t = e.touches[0];
+    dragRef.current = { active:true, sx:t.clientX, sy:t.clientY, dx:0, dy:0 };
+  };
+
+  const onTouchMove = (e) => {
+    if (pinchRefLocal.current && e.touches.length === 2) {
+      const [a,b] = e.touches;
+      const p = pinchRefLocal.current;
+      const d1 = dist(a, b);
+      const nextZ = clamp(p.z0 * (d1 / p.d0), MIN_ZOOM, MAX_ZOOM);
+      setZ(nextZ);
+      // While pinching, don't show dismiss visuals
+      setDragDY(0);
+      return;
+    }
+    if (!dragRef.current.active || e.touches.length !== 1) return;
+
+    const t = e.touches[0];
+    const dx = t.clientX - dragRef.current.sx;
+    const dy = t.clientY - dragRef.current.sy;
+    dragRef.current = { ...dragRef.current, dx, dy };
+
+    if (z > 1) {
+      // Persistent pan (live)
+      const [nx, ny] = clampPan(tx + dx, ty + dy);
+      setTx(nx); setTy(ny);
+      setDragDY(0);
+      // reset gesture baseline so panning is incremental
+      dragRef.current.sx = t.clientX;
+      dragRef.current.sy = t.clientY;
+    } else {
+      // Visual slide/fade for downward drag when zoomed out
+      setDragDY(Math.max(0, dy));
+    }
+  };
+
+  const onTouchEnd = () => {
+    if (pinchRefLocal.current) {
+      setIsPinching(false);
+      pinchRefLocal.current = null;
+      return;
+    }
+    const { active, dx, dy } = dragRef.current;
+    if (!active) return;
+    dragRef.current.active = false;
+
+    if (z > 1) { setDragDY(0); return; } // keep tx/ty (persistent)
+
+    const ax = Math.abs(dx), ay = Math.abs(dy);
+    if (canClose && ay - ax > ANGLE && dy > VERT) { onClose?.(); return; }
+
+    if (ax - ay > ANGLE && ax > HORIZ) {
+      if (isImg) {
+        if (photos.length > 0) {
+          setIdx(i => (dx < 0 ? (i + 1) % photos.length : (i - 1 + photos.length) % photos.length));
+        }
+      } else if (isPdf) {
+        if (typeof pdfPages === 'number' && pdfPages > 0) {
+          setPdfPage(p => {
+            if (dx < 0) { const n = p + 1; return n > pdfPages ? 1 : n; }
+            else        { const n = p - 1; return n < 1 ? pdfPages : n; }
+          });
+        }
+      }
+    }
+
+    setDragDY(0);
+  };
+
+  // Keyboard (desktop)
+  React.useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === 'Escape' && canClose) onClose?.();
+      if (z > 1) return;
+      if (e.key === 'ArrowLeft') {
+        if (isImg && photos.length) setIdx(i => (i - 1 + photos.length) % photos.length);
+        if (isPdf && pdfPages) setPdfPage(p => (p - 1 < 1 ? pdfPages : p - 1));
+      }
+      if (e.key === 'ArrowRight') {
+        if (isImg && photos.length) setIdx(i => (i + 1) % photos.length);
+        if (isPdf && pdfPages) setPdfPage(p => (p + 1 > pdfPages ? 1 : p + 1));
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [canClose, z, isImg, isPdf, photos.length, pdfPages, onClose]);
+
+  // Double-tap zoom toggle
+  const lastTapRef = React.useRef(0);
+  const onDoubleTap = () => {
+    const now = Date.now();
+    if (now - lastTapRef.current < 280) {
+      setZ(v => (v === 1 ? 2 : 1));
+      // clamp current pan for new zoom
+      const [nx, ny] = clampPan(tx, ty);
+      setTx(nx); setTy(ny);
+      setDragDY(0);
+    }
+    lastTapRef.current = now;
+  };
+
+  const handleDelete = async (ref) => {
+    if (typeof onDeletePhoto !== 'function') return;
+    const i = (photos || []).findIndex(r => r?.id === ref?.id);
+    if (i >= 0) await onDeletePhoto(i, ref);
+  };
+
+  // Backdrop fade + container slide for dismiss gesture
+  const progress = clamp(dragDY / 300, 0, 1);
+  const bgAlpha  = 0.90 * (1 - progress);
+  const translateY = dragDY ? `${dragDY}px` : '0px';
+
+  return (
+    <div
+      className="fixed inset-0 z-[3000] text-white grid place-items-center"
+      role="dialog"
+      aria-label="Viewer"
+      onTouchStart={onTouchStart}
+      onTouchMove={onTouchMove}
+      onTouchEnd={onTouchEnd}
+      onClick={onDoubleTap}
+      style={{
+        WebkitTapHighlightColor: 'transparent',
+        background: `rgba(0,0,0,${bgAlpha.toFixed(3)})`,
+        transform: `translateY(${translateY})`,
+        transition: dragDY ? 'none' : 'transform 160ms ease-out, background 160ms ease-out'
+      }}
+    >
+      <LongPressShare fileRef={isImg ? (photos.length ? photos[idx] : fileRef) : fileRef} onDelete={isImg ? handleDelete : undefined}>
+        <div
+          className="w-full h-full overflow-hidden flex items-center justify-center select-none"
+          style={{ touchAction: 'none' }}
+        >
+          {/* IMAGES */}
+          {isImg ? (
+            currentPhotoUrl ? (
+              <img
+                ref={imgRef}
+                onLoad={onImgLoad}
+                key={currentPhotoUrl}
+                src={currentPhotoUrl}
+                alt={currentPhotoRef?.name || 'image'}
+                draggable={false}
+                className="block"
+                style={{
+                  width: baseW ? `${baseW}px` : 'auto',
+                  height: baseH ? `${baseH}px` : 'auto',
+                  maxWidth: '100vw',
+                  maxHeight: '100vh',
+                  transform: `translate(${tx}px, ${ty}px) scale(${z})`,
+                  transformOrigin: 'center center',
+                  objectFit: 'contain'
+                }}
+              />
+            ) : (
+              <div className="text-sm text-gray-200">Loading…</div>
+            )
+          ) : null}
+
+          {/* PDF */}
+          {isPdf ? (
+            pdfLoading ? (
+              <div className="text-sm text-gray-200">Loading…</div>
+            ) : pdfCanvasUrl ? (
+              <img
+                key={`pdf-${pdfPage}-${fileRef?.id || ''}`}
+                src={pdfCanvasUrl}
+                alt={`Page ${pdfPage}`}
+                draggable={false}
+                className="block"
+                style={{
+                  width: baseW ? `${baseW}px` : '100vw',   // ensure known base size
+                  height: baseH ? `${baseH}px` : 'auto',
+                  maxWidth: '100vw',
+                  maxHeight: '100vh',
+                  transform: `translate(${tx}px, ${ty}px) scale(${z})`,
+                  transformOrigin: 'center center',
+                  objectFit: 'contain'
+                }}
+              />
+            ) : (
+              <div className="text-sm text-gray-200">Unable to render PDF.</div>
+            )
+          ) : null}
+
+          {/* Fallback */}
           {!isImg && !isPdf ? (
             <div className="text-center px-6">
               <div className="text-sm text-gray-200 mb-2">Can’t preview this file type.</div>
