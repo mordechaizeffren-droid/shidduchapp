@@ -517,16 +517,18 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
           transition: drag.active ? 'none' : 'transform 160ms ease-out',
         }}
       >
-        {isImg ? (
+{isImg ? (
   currentPhotoUrl ? (
     <ZoomImg
-  key={currentPhotoUrl}
-  src={currentPhotoUrl}
-  alt={(currentPhotoRef?.name) || 'image'}
-  className="w-full h-[90vh]"
-  onLockChange={setZoomLocked}
-/>
-
+      key={currentPhotoUrl}
+      src={currentPhotoUrl}
+      alt={(currentPhotoRef?.name) || 'image'}
+      className="w-full h-[90vh]"
+      onLockChange={setZoomLocked}
+    />
+  ) : (
+    <div className="p-6 text-center text-sm text-gray-500">Loading…</div>
+  )
 ) : isPdf ? (
   // New: vertical, scrollable PDF stack (wrapped in LongPressShare for Share/Save/Delete)
   <LongPressShare fileRef={fileRef}>
@@ -535,6 +537,7 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
 ) : (
   <div className="p-6 text-center text-sm text-gray-500">No preview available.</div>
 )}
+
         {/* Optional delete (photos only) */}
         {isImg && typeof onDeletePhoto === 'function' && photos.length > 0 && (
           <button
