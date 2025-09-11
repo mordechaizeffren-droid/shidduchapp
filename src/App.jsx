@@ -725,32 +725,58 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
 
   // Zoom / pan
   const MIN_ZOOM = 1;
-  const MAX_ZOOM = 4.5;      // from Step 2
-  const SNAP_EPS  = 0.02;    // treat 0.98–1.02 as 1×
-  const CLOSE_EPS = 0.05;    // widen close window
+  const MAX_ZOOM = 4.5;
+  const SNAP_EPS  = 0.02;   // treat 0.98–1.02 as 1×
+  const CLOSE_EPS = 0.05;   // widened close window
   const [z, setZ]   = React.useState(1);
-  const [tx, setTx] = React.useState(0);
+  const [tx, setTx] = React.useState(0);   // px from screen center
   const [ty, setTy] = React.useState(0);
   const [isPinching, setIsPinching] = React.useState(false);
-  const [dragDY, setDragDY] = React.useState(0);
+  const [dragDY, setDragDY] = React.useState(0); // visual backdrop slide at ~1×
 
-  // Natural size for contain calc
+  // Natural size for contain calc (CSS px)
   const [natW, setNatW] = React.useState(0);
   const [natH, setNatH] = React.useState(0);
 
-  // Reset when source changes (also stop inertia)
+  // Inertia (targeted glide)
+  const inertiaRef = React.useRef({ id:0, running:false, t0:0, x0:0, y0:0, x1:0, y1:0, dur:0 });
   const stopInertia = React.useCallback(() => {
     const r = inertiaRef.current;
     if (r.running && r.id) cancelAnimationFrame(r.id);
     r.running = false; r.id = 0;
   }, []);
+  const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
+  const startGlideTo = React.useCallback((targetX, targetY, durationMs=200) => {
+    stopInertia();
+    const r = inertiaRef.current;
+    r.running = true;
+    r.t0 = performance.now();
+    r.x0 = tx; r.y0 = ty;
+    r.x1 = targetX; r.y1 = targetY;
+    r.dur = durationMs;
+    const step = () => {
+      if (!r.running) return;
+      const now = performance.now();
+      const t = Math.min(1, (now - r.t0) / r.dur);
+      const e = easeOutCubic(t);
+      setTx(r.x0 + (r.x1 - r.x0) * e);
+      setTy(r.y0 + (r.y1 - r.y0) * e);
+      if (t >= 1) { r.running = false; r.id = 0; return; }
+      r.id = requestAnimationFrame(step);
+    };
+    r.id = requestAnimationFrame(step);
+  }, [tx, ty, stopInertia]);
+
+  // Reset when source changes
   const resetView = React.useCallback(() => {
     setZ(1); setTx(0); setTy(0); setDragDY(0); stopInertia();
   }, [stopInertia]);
   React.useEffect(() => { resetView(); }, [idx, pdfPage, resetView, fileRef?.id]);
 
-  // Close only when near 1× AND pan is tiny
-  const canClose = (Math.abs(z - 1) <= CLOSE_EPS) && (Math.abs(tx) + Math.abs(ty) <= 4) && !isPinching;
+  // Close & delete gates (only at ~1×, tiny pan, not pinching)
+  const atRest = (Math.abs(z - 1) <= CLOSE_EPS) && (Math.abs(tx) + Math.abs(ty) <= 4) && !isPinching;
+  const canClose  = atRest;
+  const canDelete = atRest && isImg && typeof onDeletePhoto === 'function';
 
   // Current image URL
   const currentPhotoRef = isImg ? (photos.length ? photos[idx % photos.length] : fileRef) : null;
@@ -775,7 +801,7 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
     return [clamp(nx, -maxX, maxX), clamp(ny, -maxY, maxY)];
   }, [getContainBase, z]);
 
-  // --- Finger-anchored pinch bookkeeping ---
+  // Finger-anchored pinch bookkeeping
   const pinchRef = React.useRef(null);
   const screenToContent = React.useCallback((sx, sy, zNow = z, txNow = tx, tyNow = ty) => {
     const { vw, vh } = getContainBase();
@@ -784,7 +810,7 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
     return { cx: (dx - txNow) / zNow, cy: (dy - tyNow) / zNow };
   }, [getContainBase, z, tx, ty]);
 
-  // PDF render → dataURL; set nat size from bitmap
+  // PDF render → dataURL (bitmap) & nat size from canvas
   React.useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -843,43 +869,15 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
     setTx(0); setTy(0);
   }, []);
 
-  // Gestures + inertia (targeted edge glide)
-  const HORIZ = 60, VERT = 60, ANGLE = 12;  // slightly easier close
-  const dragRef = React.useRef({ active:false, sx:0, sy:0, dx:0, dy:0, vx:0, vy:0, t0:0 });
-
-  // Inertia as a short glide to a clamped target (no jitter)
-  const inertiaRef = React.useRef({ id:0, running:false, t0:0, x0:0, y0:0, x1:0, y1:0, dur:0 });
-  const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
-  const startGlideTo = React.useCallback((targetX, targetY, durationMs=200) => {
-    stopInertia();
-    const r = inertiaRef.current;
-    r.running = true;
-    r.t0 = performance.now();
-    r.x0 = tx; r.y0 = ty;
-    r.x1 = targetX; r.y1 = targetY;
-    r.dur = durationMs;
-
-    const step = () => {
-      if (!r.running) return;
-      const now = performance.now();
-      const t = Math.min(1, (now - r.t0) / r.dur);
-      const e = easeOutCubic(t);
-      setTx(r.x0 + (r.x1 - r.x0) * e);
-      setTy(r.y0 + (r.y1 - r.y0) * e);
-      if (t >= 1) { r.running = false; r.id = 0; return; }
-      r.id = requestAnimationFrame(step);
-    };
-    r.id = requestAnimationFrame(step);
-  }, [tx, ty, stopInertia]);
+  // Gestures (with TOTAL drag tracking for close/delete/nav at ~1×)
+  const HORIZ = 60, VERT = 60, ANGLE = 12;  // slightly easier gates
+  const dragRef = React.useRef({
+    active:false, sx:0, sy:0, sx0:0, sy0:0, dx:0, dy:0, vx:0, vy:0, t0:0
+  });
 
   const onTouchStart = (e) => {
-    // Cancel any ongoing glide immediately
-    stopInertia();
-
-    // If we're basically at rest, snap to exact rest so close can trigger reliably
-    if (Math.abs(z - 1) <= CLOSE_EPS && (Math.abs(tx) + Math.abs(ty) <= 4)) {
-      setZ(1); setTx(0); setTy(0);
-    }
+    stopInertia(); // cancel any glide
+    if (atRest) { setZ(1); setTx(0); setTy(0); } // snap to exact rest
 
     if (e.touches.length === 2) {
       const [a,b] = e.touches;
@@ -894,7 +892,12 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
     if (e.touches.length !== 1) return;
     pinchRef.current = null;
     const t = e.touches[0];
-    dragRef.current = { active:true, sx:t.clientX, sy:t.clientY, dx:0, dy:0, vx:0, vy:0, t0:performance.now() };
+    dragRef.current = {
+      active:true,
+      sx:t.clientX, sy:t.clientY,
+      sx0:t.clientX, sy0:t.clientY,
+      dx:0, dy:0, vx:0, vy:0, t0:performance.now()
+    };
   };
 
   const onTouchMove = (e) => {
@@ -932,6 +935,7 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
     dragRef.current.vx = dx / dt * 16.7;
     dragRef.current.vy = dy / dt * 16.7;
 
+    // update last point + time
     dragRef.current.sx = t.clientX;
     dragRef.current.sy = t.clientY;
     dragRef.current.t0 = now;
@@ -941,7 +945,9 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
       setTx(nx); setTy(ny);
       setDragDY(0);
     } else {
-      setDragDY(Math.max(0, dy));
+      // At ~1× use TOTAL movement from origin for visual/backdrop
+      const totalDy = t.clientY - dragRef.current.sy0;
+      setDragDY(Math.max(0, totalDy));
     }
   };
 
@@ -952,13 +958,13 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
       if (Math.abs(z - 1) <= SNAP_EPS) { setZ(1); setTx(0); setTy(0); }
       return;
     }
-    const { active, vx, vy, dx, dy } = dragRef.current;
+    const { active, vx, vy, sx, sy, sx0, sy0 } = dragRef.current;
     if (!active) return;
     dragRef.current.active = false;
 
     if (z > 1 + SNAP_EPS) {
       setDragDY(0);
-      // Project a target and glide there, clamped to viewport (single, decisive coast)
+      // Glide to clamped target
       const MULT = 14; // fling distance scale
       let targetX = tx + vx * MULT;
       let targetY = ty + vy * MULT;
@@ -967,20 +973,32 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
       return;
     }
 
-    // Close gesture (vertical-dominant, easier gate)
-    const ax = Math.abs(dx), ay = Math.abs(dy);
-    const verticalDominant = (ay > ax + 8);  // small bias toward vertical
-    if (canClose && verticalDominant && dy > VERT) { onClose?.(); return; }
+    // TOTAL movement since touchstart
+    const totalDx = sx - sx0;
+    const totalDy = sy - sy0;
+    const axTot = Math.abs(totalDx), ayTot = Math.abs(totalDy);
 
-    // Horizontal nav at rest
-    if (ax - ay > ANGLE && ax > HORIZ) {
+    // Swipe-Down = Close (vertical dominant)
+    if (canClose && ayTot > VERT && totalDy > 0 && ayTot > axTot + 8) {
+      onClose?.(); setDragDY(0); return;
+    }
+
+    // Swipe-Up = Delete (images only, at rest)
+    if (canDelete && ayTot > VERT && totalDy < 0 && ayTot > axTot + 8) {
+      const i = (photos || []).findIndex(r => r?.id === currentPhotoRef?.id);
+      if (i >= 0) onDeletePhoto(i, currentPhotoRef);
+      setDragDY(0); return;
+    }
+
+    // Swipe-Left/Right = Nav at rest
+    if (axTot > HORIZ && axTot > ayTot + ANGLE) {
       if (isImg) {
         if (photos.length > 0)
-          setIdx(i => (dx < 0 ? (i + 1) % photos.length : (i - 1 + photos.length) % photos.length));
+          setIdx(i => (totalDx < 0 ? (i + 1) % photos.length : (i - 1 + photos.length) % photos.length));
       } else if (isPdf && typeof pdfPages === 'number' && pdfPages > 0) {
         setPdfPage(p => {
-          if (dx < 0) { const n = p + 1; return n > pdfPages ? 1 : n; }
-          else        { const n = p - 1; return n < 1 ? pdfPages : n; }
+          if (totalDx < 0) { const n = p + 1; return n > pdfPages ? 1 : n; }
+          else             { const n = p - 1; return n < 1 ? pdfPages : n; }
         });
       }
     }
@@ -990,7 +1008,7 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
   // Keyboard (desktop)
   React.useEffect(() => {
     const onKey = (e) => {
-      if (e.key === 'Escape' && canClose) onClose?.();
+      if (e.key === 'Escape' && atRest) onClose?.();
       if (z > 1 + SNAP_EPS) return;
       if (e.key === 'ArrowLeft') {
         if (isImg && photos.length) setIdx(i => (i - 1 + photos.length) % photos.length);
@@ -1003,9 +1021,9 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [canClose, z, isImg, isPdf, photos.length, pdfPages, onClose]);
+  }, [atRest, z, isImg, isPdf, photos.length, pdfPages, onClose]);
 
-  // Double-tap (center-anchored; Step 4 will target tap point)
+  // Double-tap (center-anchored; tap-to-point comes later if desired)
   const lastTapRef = React.useRef(0);
   const onDoubleTap = () => {
     const now = Date.now();
@@ -1132,13 +1150,8 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
   );
 }
 // --- helpers ---
-function dist(a, b) {
-  const dx = a.clientX - b.clientX, dy = a.clientY - b.clientY;
-  return Math.hypot(dx, dy);
-}
-function clamp(v, lo, hi) {
-  return Math.max(lo, Math.min(hi, v));
-}
+function dist(a, b) { const dx = a.clientX - b.clientX, dy = a.clientY - b.clientY; return Math.hypot(dx, dy); }
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 
 // ===== Small menus / actions re-add =====
 function PillMenu({ label, options=[], onPick, strong }) {
