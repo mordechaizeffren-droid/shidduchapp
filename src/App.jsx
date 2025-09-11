@@ -725,8 +725,8 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
 
   // Zoom / pan (center-anchored; pan = px offset from screen center)
   const MIN_ZOOM = 1;
-  const MAX_ZOOM = 4.5;  // ⟵ raised from 2.5× to ~4–5×
-  const SNAP_EPS  = 0.02; // treat 0.98–1.02 as 1× for close + snap
+  const MAX_ZOOM = 4.5;    // from Step 2
+  const SNAP_EPS  = 0.02;  // treat 0.98–1.02 as 1× for close + snap
   const [z, setZ]   = React.useState(1);
   const [tx, setTx] = React.useState(0);
   const [ty, setTy] = React.useState(0);
@@ -738,7 +738,7 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
   const [natH, setNatH] = React.useState(0);
 
   // Reset when source changes
-  const resetView = React.useCallback(() => { setZ(1); setTx(0); setTy(0); setDragDY(0); }, []);
+  const resetView = React.useCallback(() => { setZ(1); setTx(0); setTy(0); setDragDY(0); stopInertia(); }, []);
   React.useEffect(() => { resetView(); }, [idx, pdfPage, resetView, fileRef?.id]);
 
   // Close only when ~1× and not pinching
@@ -835,11 +835,70 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
     setTx(0); setTy(0);
   }, []);
 
-  // Gestures
+  // Gestures + inertia
   const HORIZ = 60, VERT = 80, ANGLE = 15;
-  const dragRef = React.useRef({ active:false, sx:0, sy:0, dx:0, dy:0 });
+  const dragRef = React.useRef({ active:false, sx:0, sy:0, dx:0, dy:0, vx:0, vy:0, t0:0 });
+
+  // Inertia state (RAF loop)
+  const inertiaRef = React.useRef({ id: 0, running: false });
+  const stopInertia = React.useCallback(() => {
+    const r = inertiaRef.current;
+    if (r.running && r.id) cancelAnimationFrame(r.id);
+    r.running = false;
+    r.id = 0;
+  }, []);
+  const startInertia = React.useCallback((vx0, vy0) => {
+    // Only if zoomed in
+    if (z <= 1 + SNAP_EPS) return;
+    // Very small velocity: skip
+    if (Math.hypot(vx0, vy0) < 0.05) return;
+
+    stopInertia();
+    const r = inertiaRef.current;
+    r.running = true;
+
+    // frame-based decay (roughly 60fps): v *= decay per frame
+    const DECAY = 0.94;       // friction (lower = stronger friction)
+    const MIN_V = 0.02;       // stop threshold
+    let vx = vx0, vy = vy0;
+
+    const step = () => {
+      if (!r.running) return;
+
+      // Propose next pan
+      let nx = tx + vx;
+      let ny = ty + vy;
+
+      // Clamp to viewport; if we hit an edge, zero that component to avoid jitter
+      const [cx, cy] = clampPan(nx, ny, z);
+      const hitX = Math.abs(cx - nx) > 0.001;
+      const hitY = Math.abs(cy - ny) > 0.001;
+
+      if (hitX) vx = 0;
+      if (hitY) vy = 0;
+
+      setTx(cx);
+      setTy(cy);
+
+      // Apply decay
+      vx *= DECAY;
+      vy *= DECAY;
+
+      // Stop if both components small or both hit edges
+      if (Math.hypot(vx, vy) < MIN_V || (hitX && hitY)) {
+        r.running = false;
+        r.id = 0;
+        return;
+      }
+      r.id = requestAnimationFrame(step);
+    };
+    r.id = requestAnimationFrame(step);
+  }, [z, SNAP_EPS, tx, ty, clampPan, stopInertia]);
 
   const onTouchStart = (e) => {
+    // Any new touch cancels inertia immediately
+    stopInertia();
+
     if (e.touches.length === 2) {
       const [a,b] = e.touches;
       const cx = (a.clientX + b.clientX) / 2;
@@ -853,10 +912,11 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
     if (e.touches.length !== 1) return;
     pinchRef.current = null;
     const t = e.touches[0];
-    dragRef.current = { active:true, sx:t.clientX, sy:t.clientY, dx:0, dy:0 };
+    dragRef.current = { active:true, sx:t.clientX, sy:t.clientY, dx:0, dy:0, vx:0, vy:0, t0:performance.now() };
   };
 
   const onTouchMove = (e) => {
+    // Pinch zoom (finger-anchored)
     if (pinchRef.current && e.touches.length === 2) {
       const [a,b] = e.touches;
       const p = pinchRef.current;
@@ -880,16 +940,24 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
     if (!dragRef.current.active || e.touches.length !== 1) return;
 
     const t = e.touches[0];
+    const now = performance.now();
+    const dt = Math.max(1, now - dragRef.current.t0); // ms
+
     const dx = t.clientX - dragRef.current.sx;
     const dy = t.clientY - dragRef.current.sy;
-    dragRef.current = { ...dragRef.current, dx, dy };
+
+    // velocities in px/frame (approx) using dt
+    dragRef.current.vx = dx / dt * 16.7; // normalize to ~60fps
+    dragRef.current.vy = dy / dt * 16.7;
+
+    dragRef.current.sx = t.clientX;
+    dragRef.current.sy = t.clientY;
+    dragRef.current.t0 = now;
 
     if (z > 1 + SNAP_EPS) {
       const [nx, ny] = clampPan(tx + dx, ty + dy, z);
       setTx(nx); setTy(ny);
       setDragDY(0);
-      dragRef.current.sx = t.clientX;
-      dragRef.current.sy = t.clientY;
     } else {
       setDragDY(Math.max(0, dy));
     }
@@ -902,11 +970,15 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
       if (Math.abs(z - 1) <= SNAP_EPS) { setZ(1); setTx(0); setTy(0); }
       return;
     }
-    const { active, dx, dy } = dragRef.current;
+    const { active, vx, vy, dx, dy } = dragRef.current;
     if (!active) return;
     dragRef.current.active = false;
 
-    if (z > 1 + SNAP_EPS) { setDragDY(0); return; }
+    if (z > 1 + SNAP_EPS) {
+      setDragDY(0);
+      startInertia(vx, vy); // <-- coast after release
+      return;
+    }
 
     const ax = Math.abs(dx), ay = Math.abs(dy);
     if (canClose && ay - ax > ANGLE && dy > VERT) { onClose?.(); return; }
@@ -947,8 +1019,8 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
   const onDoubleTap = () => {
     const now = Date.now();
     if (now - lastTapRef.current < 280) {
+      stopInertia(); // don’t fight ongoing coast
       setZ(v => {
-        // Jump to a reasonable deep zoom (e.g. 2.5×) the first time; back to 1× next time.
         const targetIn  = Math.min(2.5, MAX_ZOOM);
         const next = v <= 1 + SNAP_EPS ? targetIn : 1;
         if (next === 1) { setTx(0); setTy(0); }
