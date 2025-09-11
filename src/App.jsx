@@ -459,10 +459,16 @@ function PdfStack({ fileRef }) {
           if (!canvas) continue;
           const ctx = canvas.getContext('2d', { alpha: false });
 
-          canvas.width = Math.floor(viewport.width);
-          canvas.height = Math.floor(viewport.height);
-          canvas.style.width = Math.floor(viewport.width / dpr) + 'px';
-          canvas.style.height = Math.floor(viewport.height / dpr) + 'px';
+         const devW = Math.ceil(viewport.width);
+const devH = Math.ceil(viewport.height);
+const cssW = Math.ceil(devW / dpr);
+const cssH = Math.ceil(devH / dpr);
+
+canvas.width = devW;
+canvas.height = devH;
+// +1 avoids fractional rounding clipping on iOS/Safari
+canvas.style.width  = (cssW) + 'px';
+canvas.style.height = (cssH + 1) + 'px';
 
           await page.render({ canvasContext: ctx, viewport }).promise;
 
