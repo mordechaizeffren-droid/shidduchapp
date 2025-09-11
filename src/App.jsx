@@ -447,30 +447,36 @@ function PdfStack({ fileRef }) {
           if (cancelled) break;
 
           const page = await doc.getPage(i);
-          // target height ~1600px @ 1x; scale with DPR for crisp text
-          const dpr = Math.max(1, window.devicePixelRatio || 1);
-          const baseTargetH = 1600;
-          const v1 = page.getViewport({ scale: 1 });
-          const scale = Math.max(0.75, Math.min(2.5, (baseTargetH / v1.height) * dpr));
-          const viewport = page.getViewport({ scale });
+         // target height ~1600px in CSS pixels (not multiplied by DPR)
+const baseTargetH = 1600;
+const v1 = page.getViewport({ scale: 1 });
+const cssScale = Math.max(0.75, Math.min(2.5, baseTargetH / v1.height));
+const viewport = page.getViewport({ scale: cssScale });
 
-          const metaIdx = i - 1;
-          const canvas = document.getElementById(pagesMeta[metaIdx].canvasId);
-          if (!canvas) continue;
-          const ctx = canvas.getContext('2d', { alpha: false });
+const dpr = Math.max(1, window.devicePixelRatio || 1);
 
-         const devW = Math.ceil(viewport.width);
-const devH = Math.ceil(viewport.height);
-const cssW = Math.ceil(devW / dpr);
-const cssH = Math.ceil(devH / dpr);
+// CSS size (what you see)
+const cssW = Math.ceil(viewport.width);
+const cssH = Math.ceil(viewport.height);
+
+// Device size (backing store)
+const devW = Math.ceil(viewport.width * dpr);
+const devH = Math.ceil(viewport.height * dpr);
+
+const metaIdx = i - 1;
+const canvas = document.getElementById(pagesMeta[metaIdx].canvasId);
+if (!canvas) continue;
 
 canvas.width = devW;
 canvas.height = devH;
-// +1 avoids fractional rounding clipping on iOS/Safari
-canvas.style.width  = (cssW) + 'px';
+canvas.style.width = cssW + 'px';
+// +1px guards against iOS fractional rounding clipping
 canvas.style.height = (cssH + 1) + 'px';
 
-          await page.render({ canvasContext: ctx, viewport }).promise;
+const ctx = canvas.getContext('2d', { alpha: false });
+ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+await page.render({ canvasContext: ctx, viewport }).promise;
 
           if (!cancelled) {
             setState(s => {
