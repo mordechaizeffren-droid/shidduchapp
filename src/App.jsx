@@ -723,34 +723,32 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
   const [pdfCanvasUrl, setPdfCanvasUrl] = React.useState('');
   const [pdfLoading, setPdfLoading] = React.useState(false);
 
-  // Zoom / pan (center-anchored)
+  // Zoom / pan (center-anchored; pan = px offset from screen center)
   const MIN_ZOOM = 1;
-  const MAX_ZOOM = 2.5;
-  const SNAP_EPS  = 0.02; // if zoom is within 2% of 1×, snap to center
+  const MAX_ZOOM = 2.5; // step 2 can raise this
+  const SNAP_EPS  = 0.02; // treat 0.98–1.02 as 1× for close + snap
   const [z, setZ]   = React.useState(1);
-  const [tx, setTx] = React.useState(0); // px offset from screen center
+  const [tx, setTx] = React.useState(0);
   const [ty, setTy] = React.useState(0);
   const [isPinching, setIsPinching] = React.useState(false);
   const [dragDY, setDragDY] = React.useState(0);
 
-  // Natural pixel size (source image) for correct clamping
+  // Natural pixel size (source) to compute contain base
   const [natW, setNatW] = React.useState(0);
   const [natH, setNatH] = React.useState(0);
 
   // Reset when source changes
-  const resetView = React.useCallback(() => {
-    setZ(1); setTx(0); setTy(0); setDragDY(0);
-  }, []);
+  const resetView = React.useCallback(() => { setZ(1); setTx(0); setTy(0); setDragDY(0); }, []);
   React.useEffect(() => { resetView(); }, [idx, pdfPage, resetView, fileRef?.id]);
 
-  // Close only when zoomed out
+  // Close only when ~1× and not pinching
   const canClose = Math.abs(z - 1) <= SNAP_EPS && !isPinching;
 
   // Current image URL
   const currentPhotoRef = isImg ? (photos.length ? photos[idx % photos.length] : fileRef) : null;
   const currentPhotoUrl = useFilePreview(currentPhotoRef || null);
 
-  // Compute "contain" base render size (in CSS pixels) and clamp pan **against viewport edges**
+  // Viewport + contain sizing
   const getContainBase = React.useCallback(() => {
     const vw = window.innerWidth  || 360;
     const vh = window.innerHeight || 640;
@@ -759,24 +757,36 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
     return { baseW: natW * scale, baseH: natH * scale, vw, vh };
   }, [natW, natH]);
 
+  // Clamp pan to viewport edges
   const clampPan = React.useCallback((nx, ny, nextZ = z) => {
     const { baseW, baseH, vw, vh } = getContainBase();
     const showW = baseW * nextZ;
     const showH = baseH * nextZ;
-    // how far content can extend beyond viewport when centered
     const maxX = Math.max(0, (showW - vw) / 2);
     const maxY = Math.max(0, (showH - vh) / 2);
     return [clamp(nx, -maxX, maxX), clamp(ny, -maxY, maxY)];
   }, [getContainBase, z]);
 
-  // Load/render PDF → dataURL; set natW/natH from rendered bitmap
+  // --- Finger-anchored pinch bookkeeping ---
+  // We preserve the *content point under the pinch center* across zoom.
+  const pinchRef = React.useRef(null);
+  // Utility: content coords of a screen point at current transform
+  const screenToContent = React.useCallback((sx, sy, zNow = z, txNow = tx, tyNow = ty) => {
+    const { vw, vh } = getContainBase();
+    // screen delta from viewport center
+    const dx = sx - vw / 2;
+    const dy = sy - vh / 2;
+    // content coords relative to content center
+    return { cx: (dx - txNow) / zNow, cy: (dy - tyNow) / zNow };
+  }, [getContainBase, z, tx, ty]);
+
+  // PDF render → dataURL; set nat size from bitmap
   React.useEffect(() => {
     let cancelled = false;
     (async () => {
       if (!isPdf || !fileRef?.id) return;
       setPdfLoading(true);
       setPdfCanvasUrl('');
-
       try {
         const blob = await dbFiles.getItem(fileRef.id);
         const ab = blob ? await blob.arrayBuffer() : null;
@@ -808,10 +818,10 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
         setPdfCanvasUrl(url);
         setPdfLoading(false);
 
-        // Use the bitmap size as natural size
+        // nat size in CSS px for contain calc
         setNatW(canvas.width / dpr);
         setNatH(canvas.height / dpr);
-        setTx(0); setTy(0); // centered at 1×
+        setTx(0); setTy(0);
       } catch {
         if (!cancelled) setPdfLoading(false);
       }
@@ -820,7 +830,7 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isPdf, fileRef?.id, pdfPage]);
 
-  // For images, get natural size on load
+  // For images, set nat size on load
   const imgRef = React.useRef(null);
   const onImgLoad = React.useCallback(() => {
     const el = imgRef.current;
@@ -833,38 +843,56 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
   // Gestures
   const HORIZ = 60, VERT = 80, ANGLE = 15;
   const dragRef = React.useRef({ active:false, sx:0, sy:0, dx:0, dy:0 });
-  const pinchRefLocal = React.useRef(null);
 
   const onTouchStart = (e) => {
     if (e.touches.length === 2) {
       const [a,b] = e.touches;
-      dragRef.current = { active:false, sx:0, sy:0, dx:0, dy:0 };
-      pinchRefLocal.current = { d0: dist(a, b), z0: z };
+      const cx = (a.clientX + b.clientX) / 2;
+      const cy = (a.clientY + b.clientY) / 2;
+      const anchor = screenToContent(cx, cy, z, tx, ty); // content point under fingers
+      pinchRef.current = {
+        d0: dist(a, b),
+        z0: z,
+        cx, cy,
+        anchor // {cx, cy}
+      };
       setIsPinching(true);
+      dragRef.current.active = false; // pinch takes over
       return;
     }
     if (e.touches.length !== 1) return;
-    pinchRefLocal.current = null;
+    pinchRef.current = null;
     const t = e.touches[0];
     dragRef.current = { active:true, sx:t.clientX, sy:t.clientY, dx:0, dy:0 };
   };
 
   const onTouchMove = (e) => {
-    if (pinchRefLocal.current && e.touches.length === 2) {
+    // Pinch: zoom around the finger center, keeping the content point fixed
+    if (pinchRef.current && e.touches.length === 2) {
       const [a,b] = e.touches;
-      const p = pinchRefLocal.current;
+      const p = pinchRef.current;
       const d1 = dist(a, b);
       let nextZ = clamp(p.z0 * (d1 / p.d0), MIN_ZOOM, MAX_ZOOM);
-
-      // Snap near 1×
       if (Math.abs(nextZ - 1) <= SNAP_EPS) nextZ = 1;
 
+      // Keep the same screen point (p.cx, p.cy) anchored to the same content point
+      const { vw, vh } = getContainBase();
+      const sx = p.cx - vw / 2, sy = p.cy - vh / 2; // screen delta from center
+      // content point captured at pinch start: p.anchor = {cx, cy}
+      // s = t + z * c  →  t' = s - z' * c
+      let nextTx = sx - nextZ * p.anchor.cx;
+      let nextTy = sy - nextZ * p.anchor.cy;
+
+      // Clamp pan to viewport edges at this zoom
+      [nextTx, nextTy] = clampPan(nextTx, nextTy, nextZ);
+
       setZ(nextZ);
-      const [nx, ny] = clampPan(tx, ty, nextZ);
-      setTx(nx); setTy(ny);
+      setTx(nextTx);
+      setTy(nextTy);
       setDragDY(0);
       return;
     }
+
     if (!dragRef.current.active || e.touches.length !== 1) return;
 
     const t = e.touches[0];
@@ -873,9 +901,11 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
     dragRef.current = { ...dragRef.current, dx, dy };
 
     if (z > 1 + SNAP_EPS) {
+      // Pan (incremental), clamped to viewport
       const [nx, ny] = clampPan(tx + dx, ty + dy, z);
       setTx(nx); setTy(ny);
       setDragDY(0);
+      // rebase gesture so it feels continuous
       dragRef.current.sx = t.clientX;
       dragRef.current.sy = t.clientY;
     } else {
@@ -885,9 +915,9 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
   };
 
   const onTouchEnd = () => {
-    if (pinchRefLocal.current) {
+    if (pinchRef.current) {
       setIsPinching(false);
-      pinchRefLocal.current = null;
+      pinchRef.current = null;
       if (Math.abs(z - 1) <= SNAP_EPS) { setZ(1); setTx(0); setTy(0); }
       return;
     }
@@ -902,16 +932,12 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
 
     if (ax - ay > ANGLE && ax > HORIZ) {
       if (isImg) {
-        if (photos.length > 0) {
-          setIdx(i => (dx < 0 ? (i + 1) % photos.length : (i - 1 + photos.length) % photos.length));
-        }
-      } else if (isPdf) {
-        if (typeof pdfPages === 'number' && pdfPages > 0) {
-          setPdfPage(p => {
-            if (dx < 0) { const n = p + 1; return n > pdfPages ? 1 : n; }
-            else        { const n = p - 1; return n < 1 ? pdfPages : n; }
-          });
-        }
+        if (photos.length > 0) setIdx(i => (dx < 0 ? (i + 1) % photos.length : (i - 1 + photos.length) % photos.length));
+      } else if (isPdf && typeof pdfPages === 'number' && pdfPages > 0) {
+        setPdfPage(p => {
+          if (dx < 0) { const n = p + 1; return n > pdfPages ? 1 : n; }
+          else        { const n = p - 1; return n < 1 ? pdfPages : n; }
+        });
       }
     }
     setDragDY(0);
@@ -935,7 +961,7 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
     return () => window.removeEventListener('keydown', onKey);
   }, [canClose, z, isImg, isPdf, photos.length, pdfPages, onClose]);
 
-  // Double-tap zoom toggle (snap to center when returning to ~1×)
+  // Double-tap (still center-anchored in Step 1; tap-to-point comes in Step 4)
   const lastTapRef = React.useRef(0);
   const onDoubleTap = () => {
     const now = Date.now();
@@ -965,7 +991,7 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
   const bgAlpha  = 0.90 * (1 - progress);
   const translateY = dragDY ? `${dragDY}px` : '0px';
 
-  // Absolute, center-anchored content so the viewport is the only boundary
+  // Absolute, center-anchored content (viewport is the only boundary)
   return (
     <div
       className="fixed inset-0 z-[3000] text-white"
@@ -999,10 +1025,8 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
                   position: 'absolute',
                   left: '50%',
                   top: '50%',
-                  // center-anchored + pan + zoom
                   transform: `translate(calc(-50% + ${tx}px), calc(-50% + ${ty}px)) scale(${z})`,
                   transformOrigin: 'center center',
-                  // contain at 1×, but allow grow with scale
                   maxWidth: '100vw',
                   maxHeight: '100vh',
                   objectFit: 'contain'
