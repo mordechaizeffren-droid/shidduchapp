@@ -621,13 +621,19 @@ await page.render({ canvasContext: ctx, viewport: vp }).promise;
   style={{ touchAction: 'pan-y' }}
 >
       {state.pages.map((p, idx) => (
-        <div key={p.canvasId} className="mb-4">
-          <div className="text-[11px] text-gray-500 mb-1">
-            Page {idx + 1} / {state.pageCount}
-          </div>
-          <canvas id={p.canvasId} className="block mx-auto rounded border" />
-        </div>
-      ))}
+  <div key={p.canvasId} className="mb-4">
+    <div className="text-[11px] text-gray-500 mb-1">
+      Page {idx + 1} / {state.pageCount}
+    </div>
+
+    {/* Pinch + pan container */}
+    <div className="mx-auto rounded border overflow-hidden touch-none" style={{ width: 'min(100%, 900px)' }}>
+      <PinchZoom maxScale={3}>
+        <canvas id={p.canvasId} className="block w-full h-auto" />
+      </PinchZoom>
+    </div>
+  </div>
+))}
     </div>
   );
 }
@@ -726,17 +732,18 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
       role="dialog"
       aria-label="Viewer"
     >
-      <div
-        className="max-w-[1000px] w-full max-h-[95vh] bg-white rounded-lg overflow-hidden relative"
-        onClick={(e) => e.stopPropagation()}
-        onTouchStart={onTouchStart}
-        onTouchMove={onTouchMove}
-        onTouchEnd={onTouchEnd}
-        style={{
-          transform: drag.active && drag.dy > 0 ? `translateY(${Math.max(0, drag.dy)}px)` : undefined,
-          transition: drag.active ? 'none' : 'transform 160ms ease-out',
-        }}
-      >
+     <div
+  className="max-w-[1000px] w-full max-h-[95vh] bg-white rounded-lg overflow-hidden relative"
+  onClick={(e) => e.stopPropagation()}
+onTouchStart={isImg ? onTouchStart : undefined}
+onTouchMove={isImg ? onTouchMove : undefined}
+onTouchEnd={isImg ? onTouchEnd : undefined}
+onTouchCancel={isImg ? onTouchEnd : undefined}
+  style={{
+    transform: drag.active && drag.dy > 0 ? `translateY(${Math.max(0, drag.dy)}px)` : undefined,
+    transition: drag.active ? 'none' : 'transform 160ms ease-out',
+  }}
+>
         {isImg ? (
           currentPhotoUrl ? (
             <ZoomImg
@@ -751,8 +758,10 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
         ) : isPdf ? (
           // New vertical, scrollable PDF stack (with long-press actions)
           <LongPressShare fileRef={fileRef}>
-            <PdfStack fileRef={fileRef} />
-          </LongPressShare>
+  <PinchZoom maxScale={3} onLockChange={setZoomLocked}>
+    <PdfStack fileRef={fileRef} />
+  </PinchZoom>
+</LongPressShare>
         ) : (
           <div className="p-6 text-center text-sm text-gray-500">No preview available.</div>
         )}
@@ -1361,18 +1370,11 @@ useAutosize(notesRef, p.notes);
   })();
 
   return (
-    <div
-      className="fixed inset-0 z-[3500] bg-white flex items-start justify-center p-0"
-      role="dialog"
-      aria-label="Edit prospect"
-      onTouchStart={onTouchStart}
-      onTouchMove={onTouchMove}
-      onTouchEnd={onTouchEnd}
-      style={{
-        transform: drag.active && drag.dy > 0 ? `translateY(${Math.max(0, drag.dy)}px)` : undefined,
-        transition: drag.active ? 'none' : 'transform 160ms ease-out',
-      }}
-    >
+   <div
+  className="fixed inset-0 z-[3500] bg-white flex items-start justify-center p-0"
+  role="dialog"
+  aria-label="Edit prospect"
+>
       <div className="w-full max-w-3xl mx-auto">
         {/* grab handle + header */}
         <div className="sticky top-0 z-10 bg-white/95 backdrop-blur border-b">
