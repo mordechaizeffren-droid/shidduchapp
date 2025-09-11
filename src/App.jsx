@@ -3,14 +3,6 @@ import React, { useEffect, useRef, useState } from "react";
 import localforage from "localforage";
 import { fetchRoom, saveRoom, subscribeRoom } from "./lib/sync";
 import { uploadFile, viewUrl, deleteRef } from "./lib/files";
-function useAutosize(ref, value) {
-  React.useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = String(el.scrollHeight) + 'px';
-  }, [ref, value]);
-}
 
 // =============================================================================
 // Shidduch Organizer — Single File App • v2.0 (Lite, updated)
@@ -181,25 +173,6 @@ const shareAll = async ({ resume, photos, text }) => {
   if (urls[0]) window.open(urls[0], "_blank", "noopener,noreferrer");
   if (t) { try { await navigator.clipboard.writeText(t); } catch {} }
 };
-const shareText = async (text) => {
-  const t = (text || '').trim();
-  if (!t) return;
-  const navAny = navigator;
-  try {
-    if (navAny.share) {
-      await navAny.share({ text: t });
-      return;
-    }
-  } catch (e) {
-    if (e?.name === 'AbortError') return; // user canceled
-  }
-  try {
-    await navigator.clipboard.writeText(t);
-    alert('Notes copied to clipboard');
-  } catch {
-    alert('Unable to share/copy notes');
-  }
-};
 
 // ===== Small UI bits =====
 const statusTone = (s)=>({
@@ -316,15 +289,6 @@ function MiniPreview({ fileRef }) {
         />
       )}
 
-      {/* PDF (static preview via iframe; pointer-events off so clicks bubble) */}
-      {isPdf && url && (
-        <iframe
-          src={`${url}#view=FitH&zoom=page-fit`}
-          title="Preview"
-          className="w-full h-full pointer-events-none"
-        />
-      )}
-
       {/* Fallback icon when we have neither URL nor a known type */}
       {!isImg && !isPdf && !loading && (
         <div className="w-full h-full flex items-center justify-center text-3xl text-gray-400">📄</div>
@@ -358,6 +322,35 @@ function loadPdfjs() {
 
   return __pdfjsPromise;
 }
+// Fetch a PDF Blob for a fileRef: prefer local cache, else signed URL, then cache.
+async function getPdfBlobFromRef(fileRef) {
+  if (!fileRef?.id) return null;
+
+  // 1) local cache
+  try {
+    const cached = await dbFiles.getItem(fileRef.id);
+    if (cached instanceof Blob) return cached;
+  } catch {}
+
+  // 2) remote fetch via signed/public URL
+  try {
+    const url = await viewUrl(fileRef);
+    if (!url) return null;
+    const resp = await fetch(url, { credentials: 'omit' });
+    if (!resp.ok) return null;
+    const blob = await resp.blob();
+    // cache for next time
+    try { await dbFiles.setItem(fileRef.id, blob); } catch {}
+    return blob;
+  } catch {
+    return null;
+  }
+}
+
+// Small helper: Blob → ArrayBuffer for pdf.js
+async function blobToArrayBuffer(blob) {
+  return await blob.arrayBuffer();
+}
 
 // Pinch-zoom image that auto-fits to its container on load/resize.
 // Two-finger pinch & pan only (so one-finger swipes still work in Viewer).
@@ -372,10 +365,100 @@ function ZoomImg({ src, alt = '', className = '' }) {
     />
   );
 }
+// ===== PDF: vertical stacked renderer =====
+function PdfStack({ fileRef, targetHeight = 1600 }) {
+  const wrapRef = React.useRef(null);
+  const [numPages, setNumPages] = React.useState(0);
+  const [err, setErr] = React.useState('');
+
+  React.useEffect(() => {
+    let cancelled = false;
+    let doc = null;
+
+    (async () => {
+      try {
+        setErr('');
+        setNumPages(0);
+        const blob = await getPdfBlobFromRef(fileRef);
+        if (!blob) { setErr('Unable to fetch PDF.'); return; }
+
+        const ab = await blobToArrayBuffer(blob);
+        const pdfjs = await loadPdfjs();
+        // worker already configured in loadPdfjs()
+
+        doc = await pdfjs.getDocument({ data: ab }).promise;
+        if (cancelled) { doc?.destroy?.(); return; }
+
+        const total = doc.numPages || 0;
+        setNumPages(total);
+
+        // Render each page to its own canvas
+        const dpr = Math.max(1, window.devicePixelRatio || 1);
+        for (let i = 1; i <= total; i++) {
+          if (cancelled) break;
+          const page = await doc.getPage(i);
+          const vp1 = page.getViewport({ scale: 1 });
+          const scale = Math.max(0.75, Math.min(2.5, (targetHeight / vp1.height))) * dpr;
+          const vp = page.getViewport({ scale });
+
+          // Create holder
+          const holder = document.createElement('div');
+          holder.className = 'mb-4';
+          const label = document.createElement('div');
+          label.className = 'text-[10px] text-gray-500 mb-1';
+          label.textContent = `Page ${i} / ${total}`;
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.floor(vp.width);
+          canvas.height = Math.floor(vp.height);
+          canvas.style.width = '100%';
+          canvas.style.height = 'auto';
+          const ctx = canvas.getContext('2d', { alpha: false });
+
+          holder.appendChild(label);
+          holder.appendChild(canvas);
+
+          if (wrapRef.current) wrapRef.current.appendChild(holder);
+          await page.render({ canvasContext: ctx, viewport: vp }).promise;
+
+          // Release page
+          try { page.cleanup?.(); } catch {}
+        }
+      } catch (e) {
+        if (!cancelled) setErr('Failed to render PDF. You can try opening in system viewer.');
+      } finally {
+        try { doc?.destroy?.(); } catch {}
+      }
+    })();
+
+    return () => { cancelled = true; if (wrapRef.current) wrapRef.current.innerHTML = ''; };
+  }, [fileRef?.id]);
+
+  if (err) {
+    return (
+      <div className="p-4 text-sm text-gray-600">
+        {err}{' '}
+        <button
+          className="underline"
+          onClick={async () => {
+            const url = await viewUrl(fileRef);
+            if (url) window.open(url, '_blank', 'noopener,noreferrer');
+          }}
+        >
+          Open in system viewer
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div ref={wrapRef} className="w-full h-[90vh] overflow-auto bg-white p-3 rounded">
+      {numPages === 0 && <div className="p-6 text-center text-sm text-gray-500">Loading PDF…</div>}
+    </div>
+  );
+}
 
 // ===== Viewer (images + PDF pages, proportional, swipe + pinch-zoom) =====
 function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }) {
-  const firstUrl = useFilePreview(fileRef);
   const isImg = (fileRef?.type || '').startsWith('image/');
   const isPdf = (fileRef?.type || '').toLowerCase() === 'application/pdf' ||
                 (fileRef?.name || '').toLowerCase().endsWith('.pdf');
@@ -383,61 +466,7 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
   // image carousel index
   const [idx, setIdx] = React.useState(startIndex);
   React.useEffect(() => setIdx(startIndex), [startIndex, fileRef?.id]);
-
-  // PDF state
-  const [pdfPage, setPdfPage] = React.useState(1);
-  const [pdfPages, setPdfPages] = React.useState(null);
-  const [pdfImg, setPdfImg] = React.useState('');
-  const [pdfFallback, setPdfFallback] = React.useState(false);
-  const [pdfLoading, setPdfLoading] = React.useState(false);
-  React.useEffect(() => { setPdfPage(1); setPdfPages(null); setPdfImg(''); setPdfFallback(false); setPdfLoading(false); }, [fileRef?.id]);
-
-  // Render current PDF page to an image (your existing approach)
-  React.useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      if (!isPdf || !fileRef?.id) return;
-      setPdfLoading(true); setPdfImg('');
-      const watchdog = new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 2500));
-      try {
-        const blob = await dbFiles.getItem(fileRef.id);
-        if (!blob) throw new Error('no-blob');
-        const ab = await blob.arrayBuffer();
-        const pdfjs = await loadPdfjs();
-try {
-  pdfjs.disableWorker = false; // use worker for speed/stability
-  if (pdfjs.GlobalWorkerOptions) {
-    pdfjs.GlobalWorkerOptions.workerSrc =
-      'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
-  }
-} catch {}
-        const doc = await pdfjs.getDocument({ data: ab }).promise;
-        if (cancelled) { doc.destroy?.(); return; }
-        setPdfPages(doc.numPages || null);
-        const pageNum = Math.max(1, Math.min(pdfPage, doc.numPages || pdfPage));
-        const page = await doc.getPage(pageNum);
-        const v1 = page.getViewport({ scale: 1 });
-        const targetH = 1400;
-        const dpr = Math.max(1, window.devicePixelRatio || 1);
-        const scale = Math.max(0.75, Math.min(2.5, targetH / v1.height)) * dpr;
-        const viewport = page.getViewport({ scale });
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d', { alpha: false });
-        canvas.width = Math.floor(viewport.width);
-        canvas.height = Math.floor(viewport.height);
-        await page.render({ canvasContext: ctx, viewport }).promise;
-        if (cancelled) { doc.destroy?.(); return; }
-        setPdfImg(canvas.toDataURL('image/png'));
-        setPdfFallback(false);
-        setPdfLoading(false);
-        doc.destroy?.();
-      } catch {
-        if (!cancelled) { setPdfFallback(true); setPdfLoading(false); }
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [isPdf, fileRef?.id, pdfPage]);
-
+  
   // Swipe gestures (disabled while zooming/panning)
   const [zoomLocked, setZoomLocked] = React.useState(false);
   const HORIZ = 60, VERT = 80, ANGLE = 15;
@@ -465,35 +494,6 @@ try {
       onClose?.();
       return;
     }
-
-    // left/right → navigate
-    if (ax - ay > ANGLE && ax > HORIZ) {
-      if (isImg && photos.length > 1) {
-        setIdx(i => (dx < 0 ? (i + 1) % photos.length : (i - 1 + photos.length) % photos.length));
-      } else if (isPdf) {
-        setPdfPage(p => (dx < 0 ? (pdfPages ? Math.min(pdfPages, p + 1) : p + 1) : Math.max(1, p - 1)));
-      }
-    }
-    setDrag({ active:false, startX:0, startY:0, dx:0, dy:0 });
-  };
-
-  // Keyboard helpers
-  React.useEffect(() => {
-    const onKey = (e) => {
-      if (e.key === 'Escape') onClose?.();
-      if (zoomLocked) return;
-      if (e.key === 'ArrowLeft') {
-        if (isImg && photos.length > 1) setIdx(i => (i - 1 + photos.length) % photos.length);
-        else if (isPdf) setPdfPage(p => Math.max(1, p - 1));
-      }
-      if (e.key === 'ArrowRight') {
-        if (isImg && photos.length > 1) setIdx(i => (i + 1) % photos.length);
-        else if (isPdf) setPdfPage(p => (pdfPages ? Math.min(pdfPages, p + 1) : p + 1));
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [zoomLocked, isImg, isPdf, photos.length, pdfPages, onClose]);
 
   // current photo url
   const currentPhotoRef = isImg ? (photos.length ? photos[idx] : fileRef) : null;
@@ -527,34 +527,14 @@ try {
   onLockChange={setZoomLocked}
 />
 
-  ) : (
-    <div className="p-6 text-center text-sm text-gray-500">Loading…</div>
-  )
 ) : isPdf ? (
-  pdfImg ? (
-    <ZoomImg
-  key={`pdf-${pdfPage}-${fileRef?.id || ''}`}
-  src={pdfImg}
-  alt={`Page ${pdfPage}`}
-  className="w-full h-[90vh]"
-  onLockChange={setZoomLocked}
-/>
-
-  ) : pdfFallback && firstUrl ? (
-    <iframe
-      key={`${firstUrl}#${pdfPage}`}
-      src={`${firstUrl}#page=${pdfPage}&view=FitH&zoom=page-fit&toolbar=0&navpanes=0`}
-      title="PDF"
-      className="w-full h-[90vh] pointer-events-none"
-    />
-  ) : pdfLoading ? (
-    <div className="p-6 text-center text-sm text-gray-500">Loading…</div>
-  ) : (
-    <div className="p-6 text-center text-sm text-gray-500">Unable to render PDF.</div>
-  )
+  // New: vertical, scrollable PDF stack (wrapped in LongPressShare for Share/Save/Delete)
+  <LongPressShare fileRef={fileRef}>
+    <PdfStack fileRef={fileRef} />
+  </LongPressShare>
 ) : (
   <div className="p-6 text-center text-sm text-gray-500">No preview available.</div>
-)}
+)
 
         {/* Optional delete (photos only) */}
         {isImg && typeof onDeletePhoto === 'function' && photos.length > 0 && (
@@ -1117,9 +1097,6 @@ function FullProspectEditor({ prospect, allProfiles, onChange, onClose, onDelete
   const [viewerPhotos, setViewerPhotos] = React.useState([]);
   const [viewerIndex, setViewerIndex] = React.useState(0);
   const { ask: askConfirm, Confirm } = useConfirm();
-const notesRef = React.useRef(null);
-useAutosize(notesRef, p.notes);
-
 
   // swipe-down to close
   const [drag, setDrag] = React.useState({ active:false, startX:0, startY:0, dx:0, dy:0 });
@@ -1221,163 +1198,154 @@ useAutosize(notesRef, p.notes);
               <TrustSelect value={p.sourceTrust||''} onChange={(v)=>onChange({sourceTrust:v})} />
             </div>
           </div>
-{/* Resume + Photos side-by-side */}
-<div className="grid grid-cols-2 gap-3 items-start">
-  {/* Resume — long-press to Share / Save / Delete */}
-  <div>
-    <div className="text-xs mb-1">Resume</div>
+{/* Resume — long-press to Share / Save / Delete */}
+<div>
+  <div className="text-xs mb-1">Resume</div>
 
-    {p.resume ? (
-      <LongPressShare
-        fileRef={p.resume}
-        onDelete={async () => {
-          const ok = await askConfirm(); if (!ok) return;
-          if (p.resume) await deleteFileRef(p.resume);
-          onChange({ resume: null });
+  {p.resume ? (
+    <LongPressShare
+      fileRef={p.resume}
+      onDelete={async () => {
+        const ok = await askConfirm(); if (!ok) return;
+        if (p.resume) await deleteFileRef(p.resume);
+        onChange({ resume: null });
+      }}
+    >
+      <div
+        className="group cursor-pointer inline-block"
+        onClick={() => {
+          setViewerFile(p.resume);
+          setViewerPhotos([]);
+          setViewerIndex(0);
         }}
+        title="Tap to view • long-press for menu"
       >
-        <div
-          className="group cursor-pointer inline-block"
-          onClick={() => {
-            setViewerFile(p.resume);
-            setViewerPhotos([]);
-            setViewerIndex(0);
-          }}
-          title="Tap to view • long-press for menu"
-        >
-          <div className="w-40">
-            <MiniPreview fileRef={p.resume} />
-          </div>
+        <div className="w-40">
+          <MiniPreview fileRef={p.resume} />
         </div>
-      </LongPressShare>
-    ) : (
-      <button
-        type="button"
-        onClick={() => document.getElementById(`prospect-resume-${p.id}`)?.click()}
-        className="h-28 w-40 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 shadow-sm flex flex-col items-center justify-center"
-      >
-        <div className="text-3xl leading-none text-gray-400">+</div>
-        <div className="text-xs text-gray-500 mt-1">Add resume</div>
-        <input
-          id={`prospect-resume-${p.id}`}
-          type="file"
-          accept="*/*"
-          className="hidden"
-          onChange={async (e) => {
-            const f = e.target.files?.[0];
-            if (f) {
-              const ref = await attachFile(f);
-              onChange({ resume: ref });
-            }
-            e.target.value = "";
-          }}
-        />
-      </button>
-    )}
-  </div>
-
-  {/* Photos — long-press to Share / Save / Delete */}
-  <div>
-    <div className="text-xs mb-1">Photos</div>
-
-    <div className="relative inline-block">
-      {p.photos?.[1] && (
-        <div className="absolute left-2 top-2 w-40 h-28 rounded-md bg-white border overflow-hidden opacity-70 pointer-events-none -z-0">
-          <MiniPreview fileRef={p.photos[1]} />
-        </div>
-      )}
-
-      {p.photos?.[0] ? (
-        <div className="relative z-10">
-          <LongPressShare
-            fileRef={p.photos[0]}
-            onDelete={async () => {
-              const ok = await askConfirm(); if (!ok) return;
-              const next = (p.photos || []).slice(1);
-              await deleteFileRef(p.photos[0]);
-              onChange({ photos: next });
-            }}
-          >
-            <div
-              className="w-40 h-28 rounded-md bg-white border overflow-hidden cursor-pointer"
-              onClick={() => {
-                setViewerPhotos(p.photos || []);
-                setViewerIndex(0);
-                setViewerFile(p.photos?.[0]);
-              }}
-              title="Tap to preview • long-press for menu"
-            >
-              <MiniPreview fileRef={p.photos[0]} />
-            </div>
-          </LongPressShare>
-
-          {/* small add button */}
-          <button
-            type="button"
-            onClick={() => document.getElementById(`prospect-photos-${p.id}`)?.click()}
-            className="absolute -bottom-3 -right-3 z-20 w-8 h-8 rounded-full border bg-white shadow flex items-center justify-center"
-            title="Add photo"
-          >
-            +
-          </button>
-        </div>
-      ) : (
-        <button
-          type="button"
-          onClick={() => document.getElementById(`prospect-photos-${p.id}`)?.click()}
-          className="h-28 w-40 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 shadow-sm flex flex-col items-center justify-center"
-        >
-          <div className="text-3xl leading-none text-gray-400">+</div>
-          <div className="text-[11px] text-gray-500 mt-1">Add photos</div>
-        </button>
-      )}
+      </div>
+    </LongPressShare>
+  ) : (
+    <button
+      type="button"
+      onClick={() => document.getElementById(`prospect-resume-${p.id}`)?.click()}
+      className="h-28 w-40 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 shadow-sm flex flex-col items-center justify-center"
+    >
+      <div className="text-3xl leading-none text-gray-400">+</div>
+      <div className="text-xs text-gray-500 mt-1">Add resume</div>
       <input
-        id={`prospect-photos-${p.id}`}
+        id={`prospect-resume-${p.id}`}
         type="file"
-        accept="image/*"
-        multiple
+        accept="*/*"
         className="hidden"
         onChange={async (e) => {
-          const fs = Array.from(e.target.files || []);
-          if (fs.length) {
-            const refs = [];
-            for (const f of fs) refs.push(await attachFile(f));
-            onChange({ photos: [...(p.photos || []), ...refs] });
+          const f = e.target.files?.[0];
+          if (f) {
+            const ref = await attachFile(f);
+            onChange({ resume: ref });
           }
           e.target.value = "";
         }}
       />
-    </div>
-  </div>
+    </button>
+  )}
 </div>
-    {/* Notes */}
+{/* Photos — long-press to Share / Save / Delete */}
 <div>
-  <div className="text-xs mb-1">Notes</div>
-  <div className="relative">
-    <textarea
-      ref={notesRef}
-      className="border rounded p-2 w-full text-xs select-text placeholder-gray-400 resize-none overflow-hidden"
-      rows={2}
-      value={p.notes || ''}
-      onChange={(e) => onChange({ notes: e.target.value })}
-      onInput={(e) => {
-        e.target.style.height = 'auto';
-        e.target.style.height = String(e.target.scrollHeight) + 'px';
-      }}
-      placeholder="Type notes…"
-    />
-    <div className="mt-2">
-      <IconBtn
-        ariaLabel="Share notes"
-        label="Share"
-        onClick={() => shareText(p.notes || '')}
-        className="border-blue-300 text-blue-700 bg-white hover:bg-blue-50"
+  <div className="text-xs mb-1">Photos</div>
+
+  <div className="relative inline-block">
+    {p.photos?.[1] && (
+      <div className="absolute left-2 top-2 w-40 h-28 rounded-md bg-white border overflow-hidden opacity-70 pointer-events-none -z-0">
+        <MiniPreview fileRef={p.photos[1]} />
+      </div>
+    )}
+
+    {p.photos?.[0] ? (
+      <div className="relative z-10">
+        <LongPressShare
+          fileRef={p.photos[0]}
+          onDelete={async () => {
+            const ok = await askConfirm(); if (!ok) return;
+            const next = (p.photos || []).slice(1);
+            await deleteFileRef(p.photos[0]);
+            onChange({ photos: next });
+          }}
+        >
+          <div
+            className="w-40 h-28 rounded-md bg-white border overflow-hidden cursor-pointer"
+            onClick={() => {
+              setViewerPhotos(p.photos || []);
+              setViewerIndex(0);
+              setViewerFile(p.photos?.[0]);
+            }}
+            title="Tap to preview • long-press for menu"
+          >
+            <MiniPreview fileRef={p.photos[0]} />
+          </div>
+        </LongPressShare>
+
+        {/* small add button */}
+        <button
+          type="button"
+          onClick={() => document.getElementById(`prospect-photos-${p.id}`)?.click()}
+          className="absolute -bottom-3 -right-3 z-20 w-8 h-8 rounded-full border bg-white shadow flex items-center justify-center"
+          title="Add photo"
+        >
+          +
+        </button>
+      </div>
+    ) : (
+      <button
+        type="button"
+        onClick={() => document.getElementById(`prospect-photos-${p.id}`)?.click()}
+        className="h-28 w-40 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 shadow-sm flex flex-col items-center justify-center"
       >
-        <IconShare />
-      </IconBtn>
-    </div>
+        <div className="text-3xl leading-none text-gray-400">+</div>
+        <div className="text-[11px] text-gray-500 mt-1">Add photos</div>
+      </button>
+    )}
+    <input
+      id={`prospect-photos-${p.id}`}
+      type="file"
+      accept="image/*"
+      multiple
+      className="hidden"
+      onChange={async (e) => {
+        const fs = Array.from(e.target.files || []);
+        if (fs.length) {
+          const refs = [];
+          for (const f of fs) refs.push(await attachFile(f));
+          onChange({ photos: [...(p.photos || []), ...refs] });
+        }
+        e.target.value = "";
+      }}
+    />
   </div>
 </div>
+
+          {/* Notes */}
+          <div className="mt-2">
+            <div className="text-sm font-medium">Notes</div>
+            <div className="relative">
+              <textarea
+                className="border rounded p-2 w-full text-sm pr-12 select-text placeholder-gray-400"
+                placeholder="Type notes…"
+                rows={3}
+                value={p.notes || ''}
+                onChange={(e) => onChange({ notes: e.target.value })}
+              />
+              <IconBtn
+                ariaLabel="Share notes"
+                label="Share"
+                onClick={() => shareText(p.notes || '')}
+                className="absolute -bottom-3 -left-3 z-20 border-blue-300 text-blue-700 bg-white/90 hover:bg-white"
+              >
+                <IconShare />
+              </IconBtn>
+            </div>
+          </div>
+
           {/* Share all */}
           {hasTwo && (
             <div>
@@ -1414,9 +1382,9 @@ useAutosize(notesRef, p.notes);
           }}
         />
       )}
-     {Confirm}
-</div>
-);
+      {Confirm}
+    </div>
+  );
 }
 
 // ===== Inline editors & selects =====
@@ -1483,8 +1451,6 @@ function MyProfile({ profile, saveProfile }){
   const addProfile=()=>{ const newP={ id:uid(), name:'', photos:[], resume:null, blurb:'', updatedAt:Date.now() }; const next=[...profiles,newP]; saveProfile({ ...(profile||{}), profiles:next, updatedAt:Date.now() }); setSelId(newP.id); };
   const updateProfile=(id,patch)=>{ const next=profiles.map(k=> k.id===id?{...k,...patch,updatedAt:Date.now()}:k); saveProfile({ ...(profile||{}), profiles:next, updatedAt:Date.now() }); };
   const selected=profiles.find(k=>k.id===selId);
-const blurbRef = React.useRef(null);
-useAutosize(blurbRef, selected?.blurb);
   const [editId,setEditId]=useState(''); const [editVal,setEditVal]=useState('');
   const [menu,setMenu]=useState({open:false,profileId:'',x:0,y:0});
   const { ask: askConfirm, Confirm } = useConfirm();
@@ -1647,19 +1613,13 @@ useAutosize(blurbRef, selected?.blurb);
             {Confirm}
           </div>
 
-<textarea
-  ref={blurbRef}
-  className="border rounded p-2 w-full text-xs select-text placeholder-gray-400 resize-none overflow-hidden"
-  rows={2}
-  value={selected.blurb || ''}
-  onChange={(e)=>updateProfile(selected.id, {blurb:e.target.value})}
- onInput={(e) => {
-  e.target.style.height = 'auto';
-  e.target.style.height = String(e.target.scrollHeight) + 'px';
-}}
-  placeholder="Type blurb…"
-/>
-
+          {/* Blurb — unchanged; Share all logic below remains */}
+          <div className="mt-2 max-w-xl">
+            <div className="text-xs">Blurb</div>
+            <div className="relative">
+              <textarea className="border rounded p-2 w-full text-xs pr-12 select-text placeholder-gray-400" rows={2} value={selected.blurb || ''} onChange={e=>updateProfile(selected.id,{blurb:e.target.value})} placeholder="Type blurb…" />
+            </div>
+          </div>
 
           {/* Share all (unchanged) */}
           {(() => {
@@ -1941,43 +1901,36 @@ useEffect(() => {
     <div className="absolute inset-x-0 bottom-0 h-px bg-gray-200" />
 
     <div className="flex items-end gap-2">
-      {/* Resumes tab */}
-      <div className="relative">
-               <button
-          role="tab"
-          aria-selected={tab==='prospects'}
-          className={`px-3 py-2 rounded-t-xl border border-b-0 transition-all
-            ${tab==='prospects'
-              ? 'bg-amber-500 text-white border-amber-600 shadow-lg ring-1 ring-black/5 translate-y-[1px]'
-              : 'bg-gray-50 text-gray-700 hover:shadow-sm'
-            }`}
-          onClick={()=>setTab('prospects')}
-        >
-          Resumes
-        </button>
-      </div>
+      <button
+        role="tab"
+        aria-selected={tab==='prospects'}
+        className={`px-3 py-2 rounded-t-xl border border-b-0 transition-all
+          ${tab==='prospects'
+            ? 'bg-gradient-to-b from-white to-gray-50 shadow-lg ring-1 ring-black/5 translate-y-[1px]'
+            : 'bg-gray-50 text-gray-700 hover:shadow-sm'
+          }`}
+        onClick={()=>setTab('prospects')}
+      >
+        Resumes
+      </button>
 
       <div className="flex-1" />
 
-      {/* My Profile tab */}
-      <div className="relative">
-               <button
-          role="tab"
-          aria-selected={tab==='profile'}
-          className={`px-3 py-2 rounded-t-xl border border-b-0 transition-all
-            ${tab==='profile'
-              ? 'bg-amber-500 text-white border-amber-600 shadow-lg ring-1 ring-black/5 translate-y-[1px]'
-              : 'bg-gray-50 text-gray-700 hover:shadow-sm'
-            }`}
-          onClick={()=>setTab('profile')}
-        >
-          My Profile
-        </button>
-      </div>
+      <button
+        role="tab"
+        aria-selected={tab==='profile'}
+        className={`px-3 py-2 rounded-t-xl border border-b-0 transition-all
+          ${tab==='profile'
+            ? 'bg-gradient-to-b from-white to-gray-50 shadow-lg ring-1 ring-black/5 translate-y-[1px]'
+            : 'bg-gray-50 text-gray-700 hover:shadow-sm'
+          }`}
+        onClick={()=>setTab('profile')}
+      >
+        My Profile
+      </button>
     </div>
   </div>
 </div>
-
 
       {/* Settings (gear) */}
       <div className="mb-4">
