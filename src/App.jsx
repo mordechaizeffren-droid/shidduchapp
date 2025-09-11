@@ -723,26 +723,34 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
   const [pdfCanvasUrl, setPdfCanvasUrl] = React.useState('');
   const [pdfLoading, setPdfLoading] = React.useState(false);
 
-  // Zoom / pan (center-anchored; pan = px offset from screen center)
+  // Zoom / pan
   const MIN_ZOOM = 1;
-  const MAX_ZOOM = 4.5;    // from Step 2
-  const SNAP_EPS  = 0.02;  // treat 0.98–1.02 as 1× for close + snap
+  const MAX_ZOOM = 4.5;      // from Step 2
+  const SNAP_EPS  = 0.02;    // treat 0.98–1.02 as 1×
+  const CLOSE_EPS = 0.05;    // widen close window
   const [z, setZ]   = React.useState(1);
   const [tx, setTx] = React.useState(0);
   const [ty, setTy] = React.useState(0);
   const [isPinching, setIsPinching] = React.useState(false);
   const [dragDY, setDragDY] = React.useState(0);
 
-  // Natural pixel size (source) to compute contain base
+  // Natural size for contain calc
   const [natW, setNatW] = React.useState(0);
   const [natH, setNatH] = React.useState(0);
 
-  // Reset when source changes
-  const resetView = React.useCallback(() => { setZ(1); setTx(0); setTy(0); setDragDY(0); stopInertia(); }, []);
+  // Reset when source changes (also stop inertia)
+  const stopInertia = React.useCallback(() => {
+    const r = inertiaRef.current;
+    if (r.running && r.id) cancelAnimationFrame(r.id);
+    r.running = false; r.id = 0;
+  }, []);
+  const resetView = React.useCallback(() => {
+    setZ(1); setTx(0); setTy(0); setDragDY(0); stopInertia();
+  }, [stopInertia]);
   React.useEffect(() => { resetView(); }, [idx, pdfPage, resetView, fileRef?.id]);
 
-  // Close only when ~1× and not pinching
-  const canClose = Math.abs(z - 1) <= SNAP_EPS && !isPinching;
+  // Close only when near 1× AND pan is tiny
+  const canClose = (Math.abs(z - 1) <= CLOSE_EPS) && (Math.abs(tx) + Math.abs(ty) <= 4) && !isPinching;
 
   // Current image URL
   const currentPhotoRef = isImg ? (photos.length ? photos[idx % photos.length] : fileRef) : null;
@@ -835,69 +843,43 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
     setTx(0); setTy(0);
   }, []);
 
-  // Gestures + inertia
-  const HORIZ = 60, VERT = 80, ANGLE = 15;
+  // Gestures + inertia (targeted edge glide)
+  const HORIZ = 60, VERT = 60, ANGLE = 12;  // slightly easier close
   const dragRef = React.useRef({ active:false, sx:0, sy:0, dx:0, dy:0, vx:0, vy:0, t0:0 });
 
-  // Inertia state (RAF loop)
-  const inertiaRef = React.useRef({ id: 0, running: false });
-  const stopInertia = React.useCallback(() => {
-    const r = inertiaRef.current;
-    if (r.running && r.id) cancelAnimationFrame(r.id);
-    r.running = false;
-    r.id = 0;
-  }, []);
-  const startInertia = React.useCallback((vx0, vy0) => {
-    // Only if zoomed in
-    if (z <= 1 + SNAP_EPS) return;
-    // Very small velocity: skip
-    if (Math.hypot(vx0, vy0) < 0.05) return;
-
+  // Inertia as a short glide to a clamped target (no jitter)
+  const inertiaRef = React.useRef({ id:0, running:false, t0:0, x0:0, y0:0, x1:0, y1:0, dur:0 });
+  const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
+  const startGlideTo = React.useCallback((targetX, targetY, durationMs=200) => {
     stopInertia();
     const r = inertiaRef.current;
     r.running = true;
-
-    // frame-based decay (roughly 60fps): v *= decay per frame
-    const DECAY = 0.94;       // friction (lower = stronger friction)
-    const MIN_V = 0.02;       // stop threshold
-    let vx = vx0, vy = vy0;
+    r.t0 = performance.now();
+    r.x0 = tx; r.y0 = ty;
+    r.x1 = targetX; r.y1 = targetY;
+    r.dur = durationMs;
 
     const step = () => {
       if (!r.running) return;
-
-      // Propose next pan
-      let nx = tx + vx;
-      let ny = ty + vy;
-
-      // Clamp to viewport; if we hit an edge, zero that component to avoid jitter
-      const [cx, cy] = clampPan(nx, ny, z);
-      const hitX = Math.abs(cx - nx) > 0.001;
-      const hitY = Math.abs(cy - ny) > 0.001;
-
-      if (hitX) vx = 0;
-      if (hitY) vy = 0;
-
-      setTx(cx);
-      setTy(cy);
-
-      // Apply decay
-      vx *= DECAY;
-      vy *= DECAY;
-
-      // Stop if both components small or both hit edges
-      if (Math.hypot(vx, vy) < MIN_V || (hitX && hitY)) {
-        r.running = false;
-        r.id = 0;
-        return;
-      }
+      const now = performance.now();
+      const t = Math.min(1, (now - r.t0) / r.dur);
+      const e = easeOutCubic(t);
+      setTx(r.x0 + (r.x1 - r.x0) * e);
+      setTy(r.y0 + (r.y1 - r.y0) * e);
+      if (t >= 1) { r.running = false; r.id = 0; return; }
       r.id = requestAnimationFrame(step);
     };
     r.id = requestAnimationFrame(step);
-  }, [z, SNAP_EPS, tx, ty, clampPan, stopInertia]);
+  }, [tx, ty, stopInertia]);
 
   const onTouchStart = (e) => {
-    // Any new touch cancels inertia immediately
+    // Cancel any ongoing glide immediately
     stopInertia();
+
+    // If we're basically at rest, snap to exact rest so close can trigger reliably
+    if (Math.abs(z - 1) <= CLOSE_EPS && (Math.abs(tx) + Math.abs(ty) <= 4)) {
+      setZ(1); setTx(0); setTy(0);
+    }
 
     if (e.touches.length === 2) {
       const [a,b] = e.touches;
@@ -946,8 +928,8 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
     const dx = t.clientX - dragRef.current.sx;
     const dy = t.clientY - dragRef.current.sy;
 
-    // velocities in px/frame (approx) using dt
-    dragRef.current.vx = dx / dt * 16.7; // normalize to ~60fps
+    // velocities normalized to ~60fps
+    dragRef.current.vx = dx / dt * 16.7;
     dragRef.current.vy = dy / dt * 16.7;
 
     dragRef.current.sx = t.clientX;
@@ -976,16 +958,25 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
 
     if (z > 1 + SNAP_EPS) {
       setDragDY(0);
-      startInertia(vx, vy); // <-- coast after release
+      // Project a target and glide there, clamped to viewport (single, decisive coast)
+      const MULT = 14; // fling distance scale
+      let targetX = tx + vx * MULT;
+      let targetY = ty + vy * MULT;
+      [targetX, targetY] = clampPan(targetX, targetY, z);
+      startGlideTo(targetX, targetY, 200);
       return;
     }
 
+    // Close gesture (vertical-dominant, easier gate)
     const ax = Math.abs(dx), ay = Math.abs(dy);
-    if (canClose && ay - ax > ANGLE && dy > VERT) { onClose?.(); return; }
+    const verticalDominant = (ay > ax + 8);  // small bias toward vertical
+    if (canClose && verticalDominant && dy > VERT) { onClose?.(); return; }
 
+    // Horizontal nav at rest
     if (ax - ay > ANGLE && ax > HORIZ) {
       if (isImg) {
-        if (photos.length > 0) setIdx(i => (dx < 0 ? (i + 1) % photos.length : (i - 1 + photos.length) % photos.length));
+        if (photos.length > 0)
+          setIdx(i => (dx < 0 ? (i + 1) % photos.length : (i - 1 + photos.length) % photos.length));
       } else if (isPdf && typeof pdfPages === 'number' && pdfPages > 0) {
         setPdfPage(p => {
           if (dx < 0) { const n = p + 1; return n > pdfPages ? 1 : n; }
@@ -1014,12 +1005,12 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
     return () => window.removeEventListener('keydown', onKey);
   }, [canClose, z, isImg, isPdf, photos.length, pdfPages, onClose]);
 
-  // Double-tap (center-anchored for now; Step 4 will target tap point)
+  // Double-tap (center-anchored; Step 4 will target tap point)
   const lastTapRef = React.useRef(0);
   const onDoubleTap = () => {
     const now = Date.now();
     if (now - lastTapRef.current < 280) {
-      stopInertia(); // don’t fight ongoing coast
+      stopInertia();
       setZ(v => {
         const targetIn  = Math.min(2.5, MAX_ZOOM);
         const next = v <= 1 + SNAP_EPS ? targetIn : 1;
@@ -1140,10 +1131,6 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
     </div>
   );
 }
-
-// --- helpers ---
-function dist(a, b) { const dx = a.clientX - b.clientX, dy = a.clientY - b.clientY; return Math.hypot(dx, dy); }
-function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 
 // ===== Small menus / actions re-add =====
 function PillMenu({ label, options=[], onPick, strong }) {
