@@ -2111,13 +2111,20 @@ useAutosize(blurbRef, selected?.blurb);
       {selected ? (
         <>
           <div className="grid grid-cols-2 gap-2">
-          {/* Resume — simplified (no Share/Download; long-press to share/save) */}
+         /* Resume — simplified (now with Delete via long-press) */
 <div>
   <div className="text-xs mb-1">Resume</div>
 
   {selected.resume ? (
     <>
-      <LongPressShare fileRef={selected.resume}>
+      <LongPressShare
+        fileRef={selected.resume}
+        onDelete={async () => {
+          const ok = await askConfirm(); if (!ok) return;
+          try { if (selected.resume) await deleteFileRef(selected.resume); } catch {}
+          updateProfile(selected.id, { resume: null });
+        }}
+      >
         <div
           className="group cursor-pointer inline-block"
           onClick={() => {
@@ -2125,7 +2132,7 @@ useAutosize(blurbRef, selected?.blurb);
             setViewerPhotos([]);
             setViewerIndex(0);
           }}
-          title="Tap to view. Long-press to share/save."
+          title="Tap to view • long-press for menu"
         >
           <div className="w-40">
             <MiniPreview fileRef={selected.resume} />
