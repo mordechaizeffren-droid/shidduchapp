@@ -534,8 +534,7 @@ function Viewer({ fileRef, photos = [], startIndex = 0, onClose, onDeletePhoto }
   </LongPressShare>
 ) : (
   <div className="p-6 text-center text-sm text-gray-500">No preview available.</div>
-)
-
+)}
         {/* Optional delete (photos only) */}
         {isImg && typeof onDeletePhoto === 'function' && photos.length > 0 && (
           <button
