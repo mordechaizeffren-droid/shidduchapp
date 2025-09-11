@@ -614,28 +614,23 @@ await page.render({ canvasContext: ctx, viewport: vp }).promise;
     );
   }
 
-  return (
-    <div
-  className="w-full max-h-[90vh] overflow-auto p-3 bg-white overscroll-contain"
-  data-scrollable="y"
-  style={{ touchAction: 'pan-y' }}
->
-      {state.pages.map((p, idx) => (
-  <div key={p.canvasId} className="mb-4">
-    <div className="text-[11px] text-gray-500 mb-1">
-      Page {idx + 1} / {state.pageCount}
-    </div>
-
-    {/* Pinch + pan container */}
-    <div className="mx-auto rounded border overflow-hidden touch-none" style={{ width: 'min(100%, 900px)' }}>
-      <PinchZoom maxScale={3}>
-        <canvas id={p.canvasId} className="block w-full h-auto" />
-      </PinchZoom>
-    </div>
+ return (
+  <div className="w-full p-3 bg-white">
+    {state.pages.map((p, idx) => (
+      <div key={p.canvasId} className="mb-4">
+        <div className="text-[11px] text-gray-500 mb-1">
+          Page {idx + 1} / {state.pageCount}
+        </div>
+        {/* Pinch + pan container */}
+        <div className="mx-auto rounded border overflow-hidden touch-none" style={{ width: 'min(100%, 900px)' }}>
+          <PinchZoom maxScale={3}>
+            <canvas id={p.canvasId} className="block w-full h-auto" />
+          </PinchZoom>
+        </div>
+      </div>
+    ))}
   </div>
-))}
-    </div>
-  );
+);
 }
 
 // --- “Open in system viewer” fallback button ---
