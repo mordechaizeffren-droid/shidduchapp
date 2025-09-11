@@ -539,7 +539,6 @@ if (blob) {
 try {
   doc = await docTask.promise;
 } catch (e) {
-  // Worker trouble? Retry with inline parser (no worker).
   try {
     pdfjs.disableWorker = true;
     if (blob) {
@@ -550,6 +549,9 @@ try {
       if (!docUrl) throw e;
       doc = await pdfjs.getDocument({ url: docUrl, withCredentials: false }).promise;
     }
+  } catch (err) {
+    if (!cancelled) setState({ loading: false, pages: [], pageCount: 0, error: String(err?.message || 'pdf-failed') });
+    return;
   } finally {
     pdfjs.disableWorker = false;
   }
