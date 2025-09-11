@@ -521,12 +521,39 @@ function PdfStack({ fileRef }) {
 
       try {
         const pdfjs = await loadPdfjs();
-        const blob = await getPdfBlobFromRef(fileRef);
-        if (!blob) throw new Error('no-blob');
 
-        const ab = await blob.arrayBuffer();
-        const task = pdfjs.getDocument({ data: ab });
-        doc = await task.promise;
+// Try Blob first; if missing, fall back to direct URL.
+// If worker has issues (Safari/iOS), retry once without worker.
+let docTask, docUrl = null, blob = null;
+
+blob = await getPdfBlobFromRef(fileRef);
+if (blob) {
+  const ab = await blob.arrayBuffer();
+  docTask = pdfjs.getDocument({ data: ab });
+} else {
+  docUrl = await viewUrl(fileRef);
+  if (!docUrl) throw new Error('no-source');
+  docTask = pdfjs.getDocument({ url: docUrl, withCredentials: false });
+}
+
+try {
+  doc = await docTask.promise;
+} catch (e) {
+  // Worker trouble? Retry with inline parser (no worker).
+  try {
+    pdfjs.disableWorker = true;
+    if (blob) {
+      const ab = await blob.arrayBuffer();
+      doc = await pdfjs.getDocument({ data: ab }).promise;
+    } else {
+      if (!docUrl) docUrl = await viewUrl(fileRef);
+      if (!docUrl) throw e;
+      doc = await pdfjs.getDocument({ url: docUrl, withCredentials: false }).promise;
+    }
+  } finally {
+    pdfjs.disableWorker = false;
+  }
+}
         if (cancelled) { try { doc.destroy?.(); } catch {} return; }
 
         const pageCount = doc.numPages || 0;
