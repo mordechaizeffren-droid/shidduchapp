@@ -555,63 +555,69 @@ doc = await loadingTask.promise;
 
         setState(s => ({ ...s, pageCount, pages: pagesMeta }));
 
-// NEW: let React paint the <canvas> nodes before we start drawing.
-await new Promise(requestAnimationFrame); // or: await new Promise(r => setTimeout(r, 0));
+// --- Wait for React to paint the <canvas> nodes and make sure they exist ---
+await new Promise(requestAnimationFrame);
+await new Promise(requestAnimationFrame); // one more for layout on iOS
 
-        // Render pages sequentially; keep memory reasonable
-        for (let i = 1; i <= pageCount; i++) {
-          if (cancelled) break;
+// Render pages sequentially; keep memory reasonable
+for (let i = 1; i <= pageCount; i++) {
+  if (cancelled) break;
 
-          const page = await doc.getPage(i);
-         const dpr = Math.max(1, window.devicePixelRatio || 1);
-const v1  = page.getViewport({ scale: 1 });
+  const page = await doc.getPage(i);
+  const dpr = Math.max(1, window.devicePixelRatio || 1);
+  const v1  = page.getViewport({ scale: 1 });
 
-const metaIdx = i - 1;
-const canvas = document.getElementById(state.pages[metaIdx].canvasId);
-if (!canvas) {
-  await new Promise(r => setTimeout(r, 30)); // give React a tick
-  continue;
+  const metaIdx = i - 1;
+
+  // Wait for the canvas element to actually be in the DOM
+  let canvas = null;
+  for (let tries = 0; tries < 20; tries++) {
+    canvas = document.getElementById(pagesMeta[metaIdx].canvasId);
+    if (canvas) break;
+    await new Promise(r => setTimeout(r, 16));
+  }
+  if (!canvas) continue;
+
+  // Measure the available CSS width (the div that wraps the canvas)
+  const wrapper = canvas.parentElement || canvas;
+  // subtract a few px for borders/padding
+  const maxCssW = Math.max(
+    280,
+    (wrapper.clientWidth || window.innerWidth || 360) - 8
+  );
+
+  // Fit to container width; compute render scale so device pixels = cssW * dpr
+  const cssW        = Math.min(Math.ceil(v1.width), Math.ceil(maxCssW));
+  const renderScale = (cssW * dpr) / v1.width;
+  const vp          = page.getViewport({ scale: renderScale });
+
+  // Backing store (device pixels) + CSS size
+  canvas.width  = Math.max(1, Math.ceil(vp.width));
+  canvas.height = Math.max(1, Math.ceil(vp.height));
+  canvas.style.width  = Math.ceil(vp.width  / dpr) + 'px';
+  canvas.style.height = Math.ceil(vp.height / dpr) + 'px';
+
+  const ctx = canvas.getContext('2d', { alpha: false });
+
+  // Debug fill to prove we’re painting (and avoid “white on white” flashes)
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Render
+  await page.render({ canvasContext: ctx, viewport: vp }).promise;
+
+  if (!cancelled) {
+    setState(s => {
+      const next = [...s.pages];
+      next[metaIdx] = { ...next[metaIdx], w: canvas.width, h: canvas.height };
+      return { ...s, pages: next, loading: false };
+    });
+  }
+
+  // Small yield so the UI can breathe
+  await new Promise(r => setTimeout(r, 10));
 }
-const ctx = canvas.getContext('2d', { alpha: false });
 
-// Measure the available CSS width (the div that wraps the canvas)
-const wrapper = canvas.parentElement || canvas;
-const maxCssW = Math.max( // subtract a few px for borders/padding
-  280,
-  (wrapper.clientWidth || window.innerWidth || 360) - 8
-);
-
-// Desired CSS width = fit container (no horizontal clipping)
-const cssW = Math.min(Math.ceil(v1.width), Math.ceil(maxCssW));
-
-// Compute render scale so device pixels = cssW * dpr
-const renderScale = (cssW * dpr) / v1.width;
-const vp = page.getViewport({ scale: renderScale });
-
-// Set backing store (device pixels) + CSS size
-canvas.width  = Math.ceil(vp.width);
-canvas.height = Math.ceil(vp.height);
-canvas.style.width  = cssW + 'px';
-canvas.style.height = Math.ceil(vp.height / dpr) + 'px';
-
-// Render
-await page.render({ canvasContext: ctx, viewport: vp }).promise;
-
-          if (!cancelled) {
-            setState(s => {
-              const next = [...s.pages];
-              next[metaIdx] = {
-                ...next[metaIdx],
-                w: canvas.width,
-                h: canvas.height,
-              };
-              return { ...s, pages: next, loading: false };
-            });
-          }
-
-          // Small yield so the UI can breathe + lets us “preload next”
-          await new Promise(r => setTimeout(r, 10));
-        }
       } catch (e) {
         if (!cancelled) {
           setState({ loading: false, pages: [], pageCount: 0, error: 'pdf-failed' });
