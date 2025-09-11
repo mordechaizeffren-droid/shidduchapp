@@ -407,6 +407,102 @@ async function getPdfBlobFromRef(fileRef) {
 async function blobToArrayBuffer(blob) {
   return await blob.arrayBuffer();
 }
+// --- PinchZoom: two-finger pinch + pan, reports lock state to parent ---
+function PinchZoom({ children, onLockChange, min=1, max=3 }) {
+  const wrapRef = React.useRef(null);
+  const innerRef = React.useRef(null);
+
+  const [state, setState] = React.useState({ scale: 1, tx: 0, ty: 0 });
+
+  // notify parent (e.g., to disable swipe while zoomed)
+  React.useEffect(() => { onLockChange?.(state.scale > 1.01); }, [state.scale, onLockChange]);
+
+  const pinchRef = React.useRef({
+    startScale: 1, startTx: 0, startTy: 0,
+    startDist: 0, startMid: { x: 0, y: 0 }, active: false,
+  });
+
+  const getDistance = (t1, t2) => Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+  const getMidpoint = (t1, t2) => ({ x: (t1.clientX + t2.clientX) / 2, y: (t1.clientY + t2.clientY) / 2 });
+
+  const onTouchStart = (e) => {
+    if (e.touches.length === 2) {
+      const [a, b] = e.touches;
+      pinchRef.current = {
+        startScale: state.scale,
+        startTx: state.tx,
+        startTy: state.ty,
+        startDist: getDistance(a, b),
+        startMid: getMidpoint(a, b),
+        active: true,
+      };
+      e.preventDefault();
+    }
+  };
+
+  const onTouchMove = (e) => {
+    if (e.touches.length === 2 && pinchRef.current.active) {
+      e.preventDefault();
+      const [a, b] = e.touches;
+      let newScale = (pinchRef.current.startScale * getDistance(a, b)) / pinchRef.current.startDist;
+      newScale = Math.max(min, Math.min(max, newScale));
+
+      const wrap = wrapRef.current;
+      const inner = innerRef.current;
+      const rect = wrap.getBoundingClientRect();
+
+      const sx = pinchRef.current.startMid.x - rect.left - pinchRef.current.startTx;
+      const sy = pinchRef.current.startMid.y - rect.top  - pinchRef.current.startTy;
+
+      const scaleRatio = newScale / pinchRef.current.startScale;
+      const dx = sx * (scaleRatio - 1);
+      const dy = sy * (scaleRatio - 1);
+
+      const drift = getMidpoint(a, b);
+      let tx = pinchRef.current.startTx - dx + (drift.x - pinchRef.current.startMid.x);
+      let ty = pinchRef.current.startTy - dy + (drift.y - pinchRef.current.startMid.y);
+
+      const innerW = inner.scrollWidth  * newScale;
+      const innerH = inner.scrollHeight * newScale;
+      const maxX = Math.max(0, (innerW - rect.width)  / 2);
+      const maxY = Math.max(0, (innerH - rect.height) / 2);
+      tx = Math.min(maxX, Math.max(-maxX, tx));
+      ty = Math.min(maxY, Math.max(-maxY, ty));
+
+      setState({ scale: newScale, tx, ty });
+    }
+  };
+
+  const onTouchEnd = () => {
+    if (!pinchRef.current.active) return;
+    pinchRef.current.active = false;
+    if (state.scale < 1.02) setState({ scale: 1, tx: 0, ty: 0 }); // snap back
+  };
+
+  return (
+    <div
+      ref={wrapRef}
+      className="relative w-full max-h-[90vh] overflow-hidden bg-white"
+      style={{ touchAction: 'none' }}
+      onTouchStart={onTouchStart}
+      onTouchMove={onTouchMove}
+      onTouchEnd={onTouchEnd}
+      onTouchCancel={onTouchEnd}
+    >
+      <div
+        ref={innerRef}
+        style={{
+          transform: `translate3d(${state.tx}px, ${state.ty}px, 0) scale(${state.scale})`,
+          transformOrigin: '0 0',
+          willChange: 'transform',
+        }}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
 // --- Vertical PDF stack (all pages rendered with pdf.js, no iframes) ---
 function PdfStack({ fileRef }) {
   const [state, setState] = React.useState({
