@@ -2166,54 +2166,89 @@ useAutosize(blurbRef, selected?.blurb);
   )}
 </div>
   
-            {/* Photos (no share/download buttons; long-press to share/save) */}
-            <div>
-              <div className="text-xs mb-1">Photos</div>
+ {/* Photos (now with Delete via long-press) */}
+<div>
+  <div className="text-xs mb-1">Photos</div>
 
-              <div className="relative inline-block">
-                {selected.photos?.[1] && (
-                  <div className="absolute left-2 top-2 w-40 h-28 rounded-md bg-white border overflow-hidden opacity-70 pointer-events-none -z-0">
-                    <MiniPreview fileRef={selected.photos[1]} />
-                  </div>
-                )}
+  <div className="relative inline-block">
+    {selected.photos?.[1] && (
+      <div className="absolute left-2 top-2 w-40 h-28 rounded-md bg-white border overflow-hidden opacity-70 pointer-events-none -z-0">
+        <MiniPreview fileRef={selected.photos[1]} />
+      </div>
+    )}
 
-                {selected.photos?.[0] ? (
-                  <div className="relative z-10">
-                    <LongPressShare fileRef={selected.photos[0]}>
-                      <div
-                        className="w-40 h-28 rounded-md bg-white border overflow-hidden cursor-pointer"
-                        onClick={()=>{ setViewerPhotos(selected.photos||[]); setViewerIndex(0); setViewerFile(selected.photos?.[0]); }}
-                        role="button"
-                        tabIndex={0}
-                        title="Tap to preview • long-press to share/save"
-                        onKeyDown={(e)=>{ if(e.key==='Enter' || e.key===' '){ e.preventDefault(); setViewerPhotos(selected.photos||[]); setViewerIndex(0); setViewerFile(selected.photos?.[0]); } }}
-                      >
-                        <MiniPreview fileRef={selected.photos[0]} />
-                      </div>
-                    </LongPressShare>
+    {selected.photos?.[0] ? (
+      <div className="relative z-10">
+        <LongPressShare
+          fileRef={selected.photos[0]}
+          onDelete={async () => {
+            const ok = await askConfirm(); if (!ok) return;
+            const next = (selected.photos || []).slice(1);
+            try { await deleteFileRef(selected.photos[0]); } catch {}
+            updateProfile(selected.id, { photos: next });
+          }}
+        >
+          <div
+            className="w-40 h-28 rounded-md bg-white border overflow-hidden cursor-pointer"
+            onClick={() => {
+              setViewerPhotos(selected.photos || []);
+              setViewerIndex(0);
+              setViewerFile(selected.photos?.[0]);
+            }}
+            role="button"
+            tabIndex={0}
+            title="Tap to preview • long-press for menu"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                setViewerPhotos(selected.photos || []);
+                setViewerIndex(0);
+                setViewerFile(selected.photos?.[0]);
+              }
+            }}
+          >
+            <MiniPreview fileRef={selected.photos[0]} />
+          </div>
+        </LongPressShare>
 
-                    {/* small add button stays */}
-                    <button
-                      type="button"
-                      onClick={()=>document.getElementById(`profile-photos-${selected.id}`)?.click()}
-                      className="absolute -bottom-3 -right-3 z-20 w-8 h-8 rounded-full border bg-white shadow flex items-center justify-center"
-                      title="Add photo"
-                    >+</button>
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={()=>document.getElementById(`profile-photos-${selected.id}`)?.click()}
-                    className="h-28 w-40 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 shadow-sm flex flex-col items-center justify-center"
-                  >
-                    <div className="text-3xl leading-none text-gray-400">+</div>
-                    <div className="text-[11px] text-gray-500 mt-1">Add photos</div>
-                  </button>
-                )}
-                <input id={`profile-photos-${selected.id}`} type="file" accept="image/*" multiple className="hidden" onChange={async(e)=>{ const fs=Array.from(e.target.files||[]); if(fs.length){ const refs=[]; for(const f of fs){ refs.push(await attachFile(f)); } updateProfile(selected.id,{photos:[...(selected.photos||[]), ...refs]}); } e.target.value=""; }} />
-              </div>
-            </div>
+        {/* small add button */}
+        <button
+          type="button"
+          onClick={() => document.getElementById(`profile-photos-${selected.id}`)?.click()}
+          className="absolute -bottom-3 -right-3 z-20 w-8 h-8 rounded-full border bg-white shadow flex items-center justify-center"
+          title="Add photo"
+        >+</button>
+      </div>
+    ) : (
+      <button
+        type="button"
+        onClick={() => document.getElementById(`profile-photos-${selected.id}`)?.click()}
+        className="h-28 w-40 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 shadow-sm flex flex-col items-center justify-center"
+      >
+        <div className="text-3xl leading-none text-gray-400">+</div>
+        <div className="text-[11px] text-gray-500 mt-1">Add photos</div>
+      </button>
+    )}
 
+    <input
+      id={`profile-photos-${selected.id}`}
+      type="file"
+      accept="image/*"
+      multiple
+      className="hidden"
+      onChange={async (e) => {
+        const fs = Array.from(e.target.files || []);
+        if (fs.length) {
+          const refs = [];
+          for (const f of fs) refs.push(await attachFile(f));
+          updateProfile(selected.id, { photos: [...(selected.photos || []), ...refs] });
+        }
+        e.target.value = "";
+      }}
+    />
+  </div>
+</div>
+           
            {viewerFile && (
   <Viewer
     fileRef={viewerFile}
