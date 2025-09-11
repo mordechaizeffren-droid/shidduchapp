@@ -447,36 +447,36 @@ function PdfStack({ fileRef }) {
           if (cancelled) break;
 
           const page = await doc.getPage(i);
-         // target height ~1600px in CSS pixels (not multiplied by DPR)
-const baseTargetH = 1600;
-const v1 = page.getViewport({ scale: 1 });
-const cssScale = Math.max(0.75, Math.min(2.5, baseTargetH / v1.height));
-const viewport = page.getViewport({ scale: cssScale });
-
-const dpr = Math.max(1, window.devicePixelRatio || 1);
-
-// CSS size (what you see)
-const cssW = Math.ceil(viewport.width);
-const cssH = Math.ceil(viewport.height);
-
-// Device size (backing store)
-const devW = Math.ceil(viewport.width * dpr);
-const devH = Math.ceil(viewport.height * dpr);
+         const dpr = Math.max(1, window.devicePixelRatio || 1);
+const v1  = page.getViewport({ scale: 1 });
 
 const metaIdx = i - 1;
 const canvas = document.getElementById(pagesMeta[metaIdx].canvasId);
 if (!canvas) continue;
-
-canvas.width = devW;
-canvas.height = devH;
-canvas.style.width = cssW + 'px';
-// +1px guards against iOS fractional rounding clipping
-canvas.style.height = (cssH + 1) + 'px';
-
 const ctx = canvas.getContext('2d', { alpha: false });
-ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-await page.render({ canvasContext: ctx, viewport }).promise;
+// Measure the available CSS width (the div that wraps the canvas)
+const wrapper = canvas.parentElement || canvas;
+const maxCssW = Math.max( // subtract a few px for borders/padding
+  280,
+  (wrapper.clientWidth || window.innerWidth || 360) - 8
+);
+
+// Desired CSS width = fit container (no horizontal clipping)
+const cssW = Math.min(Math.ceil(v1.width), Math.ceil(maxCssW));
+
+// Compute render scale so device pixels = cssW * dpr
+const renderScale = (cssW * dpr) / v1.width;
+const vp = page.getViewport({ scale: renderScale });
+
+// Set backing store (device pixels) + CSS size
+canvas.width  = Math.ceil(vp.width);
+canvas.height = Math.ceil(vp.height);
+canvas.style.width  = cssW + 'px';
+canvas.style.height = Math.ceil(vp.height / dpr) + 'px';
+
+// Render
+await page.render({ canvasContext: ctx, viewport: vp }).promise;
 
           if (!cancelled) {
             setState(s => {
