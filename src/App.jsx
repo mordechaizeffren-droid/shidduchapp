@@ -359,7 +359,7 @@ function useFilePreview(fileRef) {
   return url;
 }
 
-// --- MiniPreview (no iframe) ---
+// --- MiniPreview (thumbnails; lock by width) ---
 function MiniPreview({ fileRef }) {
   const url = useFilePreview(fileRef);
   const type = (fileRef?.type || "").toLowerCase();
@@ -367,27 +367,99 @@ function MiniPreview({ fileRef }) {
   const isImg = type.startsWith("image/");
   const isPdf = type === "application/pdf" || name.endsWith(".pdf");
 
+  const wrapRef = React.useRef(null);
+  const [pdfThumb, setPdfThumb] = React.useState("");   // dataURL from canvas
+  const [loading, setLoading] = React.useState(false);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    setPdfThumb("");
+    if (!isPdf || !fileRef?.id) return;
+
+    (async () => {
+      try {
+        setLoading(true);
+        // Load pdf.js
+        const pdfjs = await loadPdfjs();
+
+        // Prefer cached blob → ArrayBuffer; else fall back to signed URL
+        let ab = null;
+        try {
+          const blob = await dbFiles.getItem(fileRef.id);
+          if (blob) ab = await blob.arrayBuffer();
+        } catch {}
+        const src = ab ? { data: ab } : { url: await viewUrl(fileRef) };
+        const doc = await pdfjs.getDocument(src).promise;
+        if (cancelled) return;
+
+        const page = await doc.getPage(1);
+
+        // Compute scale based on the wrapper's CSS width (lock by width)
+        const wrap = wrapRef.current;
+        const cssW = Math.max(120, (wrap?.clientWidth || 240));
+        const v1 = page.getViewport({ scale: 1 });
+        const dpr = Math.max(1, window.devicePixelRatio || 1);
+        const scale = (cssW / v1.width) * dpr;
+        const viewport = page.getViewport({ scale });
+
+        // Render to an offscreen canvas, then export to dataURL (bitmap)
+        const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d", { alpha: false });
+        canvas.width = Math.max(1, Math.floor(viewport.width));
+        canvas.height = Math.max(1, Math.floor(viewport.height));
+        await page.render({ canvasContext: ctx, viewport }).promise;
+        if (cancelled) return;
+
+        const dataUrl = canvas.toDataURL("image/png"); // lightweight preview
+        setPdfThumb(dataUrl);
+      } catch {
+        // fall through — will show the 📄 if PDF fails
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [isPdf, fileRef?.id]);
+
   if (!fileRef) return null;
-  const loading = !url;
 
   return (
-    <div className="w-full h-28 rounded-md bg-white border overflow-hidden relative">
+    // NOTE: width is controlled by the parent (e.g., w-40). Height auto-scales.
+    <div ref={wrapRef} className="w-full rounded-md bg-white border overflow-hidden relative">
       {/* Shimmer while loading */}
-      {loading && <div className="absolute inset-0 animate-pulse bg-gray-100" />}
+      {(loading || (!url && isImg)) && (
+        <div className="absolute inset-0 animate-pulse bg-gray-100" />
+      )}
 
-      {/* Image preview */}
+      {/* Image thumbnail: lock by width (height auto) */}
       {isImg && url && (
         <img
           src={url}
           alt={fileRef.name || "image"}
-          className="w-full h-full object-contain"
+          className="block w-full h-auto object-contain select-none"
           draggable={false}
         />
       )}
 
-      {/* PDFs and other files just show an icon */}
-      {!isImg && !loading && (
-        <div className="w-full h-full flex items-center justify-center text-3xl text-gray-400">
+      {/* PDF thumbnail via pdf.js (first page), lock by width */}
+      {isPdf && pdfThumb && (
+        <img
+          src={pdfThumb}
+          alt={fileRef.name || "PDF"}
+          className="block w-full h-auto object-contain select-none"
+          draggable={false}
+        />
+      )}
+
+      {/* Fallback icon (non-image/non-PDF, or PDF render failed) */}
+      {!isImg && !isPdf && !loading && (
+        <div className="w-full py-10 flex items-center justify-center text-3xl text-gray-400">
+          📄
+        </div>
+      )}
+      {isPdf && !pdfThumb && !loading && (
+        <div className="w-full py-10 flex items-center justify-center text-3xl text-gray-400">
           📄
         </div>
       )}
