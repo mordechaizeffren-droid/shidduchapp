@@ -359,7 +359,7 @@ function useFilePreview(fileRef) {
   return url;
 }
 
-// --- MiniPreview (uniform tile: PDFs contain, Images cover) ---
+// --- MiniPreview (uniform tile: both use contain) ---
 function MiniPreview({ fileRef }) {
   const url = useFilePreview(fileRef);
   const type = (fileRef?.type || "").toLowerCase();
@@ -380,6 +380,7 @@ function MiniPreview({ fileRef }) {
         setLoading(true);
         const pdfjs = await loadPdfjs();
 
+        // cached blob → AB, else signed URL
         let ab = null;
         try {
           const blob = await dbFiles.getItem(fileRef.id);
@@ -391,7 +392,7 @@ function MiniPreview({ fileRef }) {
 
         const page = await doc.getPage(1);
 
-        // Render first page around 160px wide (hi-DPI aware)
+        // render first page ~160px wide (hi-DPI aware)
         const targetW = 160;
         const v1 = page.getViewport({ scale: 1 });
         const dpr = Math.max(1, window.devicePixelRatio || 1);
@@ -419,21 +420,21 @@ function MiniPreview({ fileRef }) {
   if (!fileRef) return null;
 
   return (
-    // Fixed tile size — MATCH the Resume box (w-40 h-28)
+    // Fixed tile size: match resume box
     <div className="w-40 h-28 rounded-md bg-white border overflow-hidden relative flex items-center justify-center">
       {loading && <div className="absolute inset-0 animate-pulse bg-gray-100" />}
 
-      {/* Images fill box uniformly (may crop) */}
+      {/* Images now ALSO use contain (mini-page style, no crop) */}
       {isImg && url && (
         <img
           src={url}
           alt={fileRef.name || "image"}
-          className="w-full h-full object-cover select-none"
+          className="w-full h-full object-contain bg-white select-none"
           draggable={false}
         />
       )}
 
-      {/* PDFs show mini full page (no crop) */}
+      {/* PDFs stay contain (mini full page) */}
       {isPdf && pdfThumb && (
         <img
           src={pdfThumb}
