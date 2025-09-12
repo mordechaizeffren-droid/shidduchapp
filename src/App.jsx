@@ -2271,13 +2271,13 @@ useAutosize(blurbRef, selected?.blurb);
   )}
 </div>
   
- {/* Photos (now with Delete via long-press) */}
+   {/* Photos (now with Delete via long-press, width-locked thumbnails) */}
 <div>
   <div className="text-xs mb-1">Photos</div>
 
   <div className="relative inline-block">
     {selected.photos?.[1] && (
-      <div className="absolute left-2 top-2 w-40 h-28 rounded-md bg-white border overflow-hidden opacity-70 pointer-events-none -z-0">
+      <div className="absolute left-2 top-2 w-40 rounded-md bg-white border overflow-hidden opacity-70 pointer-events-none -z-0">
         <MiniPreview fileRef={selected.photos[1]} />
       </div>
     )}
@@ -2294,7 +2294,7 @@ useAutosize(blurbRef, selected?.blurb);
           }}
         >
           <div
-            className="w-40 h-28 rounded-md bg-white border overflow-hidden cursor-pointer"
+            className="w-40 rounded-md bg-white border overflow-hidden cursor-pointer"
             onClick={() => {
               setViewerPhotos(selected.photos || []);
               setViewerIndex(0);
@@ -2312,6 +2312,7 @@ useAutosize(blurbRef, selected?.blurb);
               }
             }}
           >
+            {/* MiniPreview itself locks by width; height auto-scales */}
             <MiniPreview fileRef={selected.photos[0]} />
           </div>
         </LongPressShare>
@@ -2328,7 +2329,7 @@ useAutosize(blurbRef, selected?.blurb);
       <button
         type="button"
         onClick={() => document.getElementById(`profile-photos-${selected.id}`)?.click()}
-        className="h-28 w-40 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 shadow-sm flex flex-col items-center justify-center"
+        className="w-40 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 shadow-sm flex flex-col items-center justify-center py-8"
       >
         <div className="text-3xl leading-none text-gray-400">+</div>
         <div className="text-[11px] text-gray-500 mt-1">Add photos</div>
@@ -2353,7 +2354,7 @@ useAutosize(blurbRef, selected?.blurb);
     />
   </div>
 </div>
-           
+         
            {viewerFile && (
   <Viewer
     fileRef={viewerFile}
