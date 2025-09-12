@@ -359,7 +359,7 @@ function useFilePreview(fileRef) {
   return url;
 }
 
-// --- MiniPreview (uniform tile; fill box, slight crop allowed) ---
+// --- MiniPreview (uniform tile: PDFs contain, Images cover) ---
 function MiniPreview({ fileRef }) {
   const url = useFilePreview(fileRef);
   const type = (fileRef?.type || "").toLowerCase();
@@ -380,7 +380,7 @@ function MiniPreview({ fileRef }) {
         setLoading(true);
         const pdfjs = await loadPdfjs();
 
-        // Prefer cached blob; else use signed URL
+        // Use cached blob if available
         let ab = null;
         try {
           const blob = await dbFiles.getItem(fileRef.id);
@@ -392,8 +392,8 @@ function MiniPreview({ fileRef }) {
         if (cancelled) return;
         const page = await doc.getPage(1);
 
-        // Render around 160px wide (hi-DPI aware). CSS will cover-fill the tile.
-        const targetW = 160; // matches Tailwind w-40 = 160px
+        // Render first page around 160px wide (hi-DPI aware)
+        const targetW = 160;
         const v1 = page.getViewport({ scale: 1 });
         const dpr = Math.max(1, window.devicePixelRatio || 1);
         const scale = (targetW / v1.width) * dpr;
@@ -408,7 +408,7 @@ function MiniPreview({ fileRef }) {
 
         setPdfThumb(canvas.toDataURL("image/png"));
       } catch {
-        // fallback to icon
+        // fallback to 📄 icon
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -419,12 +419,12 @@ function MiniPreview({ fileRef }) {
 
   if (!fileRef) return null;
 
-  // FIXED TILE: w-40 h-28 (160x112). No outer white bars; content fills box.
+  // Fixed tile: w-40 h-28
   return (
     <div className="w-40 h-28 rounded-md bg-white border overflow-hidden relative flex items-center justify-center">
       {loading && <div className="absolute inset-0 animate-pulse bg-gray-100" />}
 
-      {/* Images fill tile; slight crop allowed */}
+      {/* Photos: fill box (cropped if needed) */}
       {isImg && url && (
         <img
           src={url}
@@ -434,17 +434,17 @@ function MiniPreview({ fileRef }) {
         />
       )}
 
-      {/* PDFs: render first page and also fill tile (mini-page look, no outer bars) */}
+      {/* PDFs: keep proportions (mini page inside tile) */}
       {isPdf && pdfThumb && (
         <img
           src={pdfThumb}
           alt={fileRef.name || "PDF"}
-          className="w-full h-full object-cover select-none"
+          className="w-full h-full object-contain bg-white select-none"
           draggable={false}
         />
       )}
 
-      {/* Fallback for non-image/non-pdf or PDF render fail */}
+      {/* Fallback icon */}
       {!isImg && !isPdf && !loading && (
         <div className="text-3xl text-gray-400">📄</div>
       )}
