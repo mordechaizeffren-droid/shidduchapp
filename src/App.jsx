@@ -2298,7 +2298,6 @@ useAutosize(blurbRef, selected?.blurb);
     }
   }}
 >
-</div>
                  {/* MiniPreview enforces the same w-40 h-28 tile as Resume */}
             <MiniPreview fileRef={selected.photos[0]} />
           </div>
