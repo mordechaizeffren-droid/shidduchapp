@@ -359,7 +359,7 @@ function useFilePreview(fileRef) {
   return url;
 }
 
-// --- MiniPreview (thumbnails; lock by width) ---
+// --- MiniPreview (fixed tile, like Resume) ---
 function MiniPreview({ fileRef }) {
   const url = useFilePreview(fileRef);
   const type = (fileRef?.type || "").toLowerCase();
@@ -368,7 +368,7 @@ function MiniPreview({ fileRef }) {
   const isPdf = type === "application/pdf" || name.endsWith(".pdf");
 
   const wrapRef = React.useRef(null);
-  const [pdfThumb, setPdfThumb] = React.useState("");   // dataURL from canvas
+  const [pdfThumb, setPdfThumb] = React.useState("");
   const [loading, setLoading] = React.useState(false);
 
   React.useEffect(() => {
@@ -379,10 +379,9 @@ function MiniPreview({ fileRef }) {
     (async () => {
       try {
         setLoading(true);
-        // Load pdf.js
         const pdfjs = await loadPdfjs();
 
-        // Prefer cached blob → ArrayBuffer; else fall back to signed URL
+        // Try cached blob → AB, else signed URL
         let ab = null;
         try {
           const blob = await dbFiles.getItem(fileRef.id);
@@ -394,26 +393,23 @@ function MiniPreview({ fileRef }) {
 
         const page = await doc.getPage(1);
 
-        // Compute scale based on the wrapper's CSS width (lock by width)
-        const wrap = wrapRef.current;
-        const cssW = Math.max(120, (wrap?.clientWidth || 240));
+        // Render to canvas scaled to ~160px wide
+        const targetW = 160;
         const v1 = page.getViewport({ scale: 1 });
         const dpr = Math.max(1, window.devicePixelRatio || 1);
-        const scale = (cssW / v1.width) * dpr;
+        const scale = (targetW / v1.width) * dpr;
         const viewport = page.getViewport({ scale });
 
-        // Render to an offscreen canvas, then export to dataURL (bitmap)
         const canvas = document.createElement("canvas");
         const ctx = canvas.getContext("2d", { alpha: false });
-        canvas.width = Math.max(1, Math.floor(viewport.width));
-        canvas.height = Math.max(1, Math.floor(viewport.height));
+        canvas.width = Math.floor(viewport.width);
+        canvas.height = Math.floor(viewport.height);
         await page.render({ canvasContext: ctx, viewport }).promise;
         if (cancelled) return;
 
-        const dataUrl = canvas.toDataURL("image/png"); // lightweight preview
-        setPdfThumb(dataUrl);
+        setPdfThumb(canvas.toDataURL("image/png"));
       } catch {
-        // fall through — will show the 📄 if PDF fails
+        // fall through
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -425,47 +421,44 @@ function MiniPreview({ fileRef }) {
   if (!fileRef) return null;
 
   return (
-    // NOTE: width is controlled by the parent (e.g., w-40). Height auto-scales.
-    <div ref={wrapRef} className="w-full rounded-md bg-white border overflow-hidden relative">
+    <div
+      ref={wrapRef}
+      className="w-40 h-28 rounded-md bg-white border overflow-hidden relative flex items-center justify-center"
+    >
       {/* Shimmer while loading */}
-      {(loading || (!url && isImg)) && (
-        <div className="absolute inset-0 animate-pulse bg-gray-100" />
-      )}
+      {loading && <div className="absolute inset-0 animate-pulse bg-gray-100" />}
 
-      {/* Image thumbnail: lock by width (height auto) */}
+      {/* Image preview (cover-fit in tile) */}
       {isImg && url && (
         <img
           src={url}
           alt={fileRef.name || "image"}
-          className="block w-full h-auto object-contain select-none"
+          className="w-full h-full object-cover select-none"
           draggable={false}
         />
       )}
 
-      {/* PDF thumbnail via pdf.js (first page), lock by width */}
+      {/* PDF thumbnail (first page) */}
       {isPdf && pdfThumb && (
         <img
           src={pdfThumb}
           alt={fileRef.name || "PDF"}
-          className="block w-full h-auto object-contain select-none"
+          className="w-full h-full object-cover select-none"
           draggable={false}
         />
       )}
 
-      {/* Fallback icon (non-image/non-PDF, or PDF render failed) */}
+      {/* Fallback icon */}
       {!isImg && !isPdf && !loading && (
-        <div className="w-full py-10 flex items-center justify-center text-3xl text-gray-400">
-          📄
-        </div>
+        <div className="text-3xl text-gray-400">📄</div>
       )}
       {isPdf && !pdfThumb && !loading && (
-        <div className="w-full py-10 flex items-center justify-center text-3xl text-gray-400">
-          📄
-        </div>
+        <div className="text-3xl text-gray-400">📄</div>
       )}
     </div>
   );
 }
+
 
 // --- pdf.js (UMD) one-time loader ---
 let _pdfjsPromise = null;
