@@ -2266,8 +2266,7 @@ useAutosize(blurbRef, selected?.blurb);
   )}
 </div>
 
-
-   {/* Photos (uniform tile; images cover, same size as Resume) */}
+{/* Photos (uniform tile; images same size as Resume) */}
 <div>
   <div className="text-xs mb-1">Photos</div>
 
@@ -2279,38 +2278,37 @@ useAutosize(blurbRef, selected?.blurb);
     )}
 
     {selected.photos?.[0] ? (
-<div
-  className="inline-block w-40 h-28 cursor-pointer"
-  onClick={() => {
-    setViewerPhotos(selected.photos || []);
-    setViewerIndex(0);
-    setViewerFile(selected.photos?.[0]);
-  }}
-  role="button"
-  tabIndex={0}
-  title="Tap to preview • long-press for menu"
-  onKeyDown={(e) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      setViewerPhotos(selected.photos || []);
-      setViewerIndex(0);
-      setViewerFile(selected.photos?.[0]);
-    }
-  }}
->
-                 {/* MiniPreview enforces the same w-40 h-28 tile as Resume */}
-            <MiniPreview fileRef={selected.photos[0]} />
-          </div>
-        </LongPressShare>
-
-        {/* add button */}
-        <button
-          type="button"
-          onClick={() => document.getElementById(`profile-photos-${selected.id}`)?.click()}
-          className="absolute -bottom-3 -right-3 z-20 w-8 h-8 rounded-full border bg-white shadow flex items-center justify-center"
-          title="Add photo"
-        >+</button>
-      </div>
+      <LongPressShare
+        fileRef={selected.photos[0]}
+        onDelete={async () => {
+          const ok = await askConfirm(); if (!ok) return;
+          const next = (selected.photos || []).slice(1);
+          try { await deleteFileRef(selected.photos[0]); } catch {}
+          updateProfile(selected.id, { photos: next });
+        }}
+      >
+        <div
+          className="inline-block w-40 h-28 cursor-pointer"
+          onClick={() => {
+            setViewerPhotos(selected.photos || []);
+            setViewerIndex(0);
+            setViewerFile(selected.photos?.[0]);
+          }}
+          role="button"
+          tabIndex={0}
+          title="Tap to preview • long-press for menu"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setViewerPhotos(selected.photos || []);
+              setViewerIndex(0);
+              setViewerFile(selected.photos?.[0]);
+            }
+          }}
+        >
+          <MiniPreview fileRef={selected.photos[0]} />
+        </div>
+      </LongPressShare>
     ) : (
       <button
         type="button"
