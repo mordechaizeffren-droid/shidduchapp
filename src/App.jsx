@@ -2218,29 +2218,28 @@ useAutosize(blurbRef, selected?.blurb);
         updateProfile(selected.id, { resume: null });
       }}
     >
-      <div
-        className="cursor-pointer inline-block"
-        title="Tap to view • long-press for menu"
-        onClick={() => {
-          setViewerFile(selected.resume);
-          setViewerPhotos([]);
-          setViewerIndex(0);
-        }}
-        role="button"
-        tabIndex={0}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            setViewerFile(selected.resume);
-            setViewerPhotos([]);
-            setViewerIndex(0);
-          }
-        }}
-      >
-        {/* IMPORTANT: no extra width/height wrapper here.
-           MiniPreview itself provides the fixed w-40 h-28 tile. */}
-        <MiniPreview fileRef={selected.resume} />
-      </div>
+     <div
+  className="inline-block w-40 h-28 cursor-pointer"
+  onClick={() => {
+    setViewerFile(selected.resume);
+    setViewerPhotos([]);
+    setViewerIndex(0);
+  }}
+  role="button"
+  tabIndex={0}
+  onKeyDown={(e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      setViewerFile(selected.resume);
+      setViewerPhotos([]);
+      setViewerIndex(0);
+    }
+  }}
+  title="Tap to view • long-press for menu"
+>
+  <MiniPreview fileRef={selected.resume} />
+</div>
+
     </LongPressShare>
   ) : (
     <button
@@ -2280,36 +2279,27 @@ useAutosize(blurbRef, selected?.blurb);
     )}
 
     {selected.photos?.[0] ? (
-      <div className="relative z-10">
-        <LongPressShare
-          fileRef={selected.photos[0]}
-          onDelete={async () => {
-            const ok = await askConfirm(); if (!ok) return;
-            const next = (selected.photos || []).slice(1);
-            try { await deleteFileRef(selected.photos[0]); } catch {}
-            updateProfile(selected.id, { photos: next });
-          }}
-        >
-          <div
-            className="cursor-pointer"
-            onClick={() => {
-              setViewerPhotos(selected.photos || []);
-              setViewerIndex(0);
-              setViewerFile(selected.photos?.[0]);
-            }}
-            role="button"
-            tabIndex={0}
-            title="Tap to preview • long-press for menu"
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                setViewerPhotos(selected.photos || []);
-                setViewerIndex(0);
-                setViewerFile(selected.photos?.[0]);
-              }
-            }}
-          >
-            {/* MiniPreview enforces the same w-40 h-28 tile as Resume */}
+<div
+  className="inline-block w-40 h-28 cursor-pointer"
+  onClick={() => {
+    setViewerPhotos(selected.photos || []);
+    setViewerIndex(0);
+    setViewerFile(selected.photos?.[0]);
+  }}
+  role="button"
+  tabIndex={0}
+  title="Tap to preview • long-press for menu"
+  onKeyDown={(e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      setViewerPhotos(selected.photos || []);
+      setViewerIndex(0);
+      setViewerFile(selected.photos?.[0]);
+    }
+  }}
+>
+</div>
+                 {/* MiniPreview enforces the same w-40 h-28 tile as Resume */}
             <MiniPreview fileRef={selected.photos[0]} />
           </div>
         </LongPressShare>
