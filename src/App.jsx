@@ -1498,34 +1498,40 @@ function Prospects({
     saveProfile({ ...(profile||{}), profiles:[...profiles, k], updatedAt: Date.now() });
     setActiveProfileId(k.id);
   };
-  const addProspect = () => {
-    if(!profiles.length){ alert('Add a profile first'); return; }
-    const p={ id:uid(), profileId:activeProfileId||profiles[0].id, fullName:'', status:'New', sourceName:'', sourceTrust:'', city:'', notes:'', photos:[], resume:null, updatedAt:Date.now() };
-    setProspects([...safe,p]);
-  };
-  const updateP = (id, patch) => setProspects(safe.map(x => x.id===id ? { ...x, ...patch, updatedAt: Date.now() } : x));
-  const removeP = async (id) => {
-    const ok = await askConfirm(); if (!ok) return;
-    const p = safe.find(x=>x.id===id);
-    try {
-      if (p?.resume) await deleteFileRef(p.resume);
-      for (const ph of ensureArray(p?.photos)) await deleteFileRef(ph);
-    } catch {}
-    setProspects(safe.filter(x=>x.id!==id));
-  };
+  
+const updateP = (id, patch) =>
+  setProspects(safe.map(x => x.id === id ? { ...x, ...patch, updatedAt: Date.now() } : x));
 
-  const onDropFiles = async (pid, files, into='auto') => {
-    if(!files||!files.length) return;
-    for(const f of Array.from(files)){
-      const ref=await attachFile(f); if(!ref) continue;
-      if(into==='resume'){ updateP(pid,{resume:ref}); }
-      else if(into==='photos'){ updateP(pid,{photos:[...(safe.find(x=>x.id===pid)?.photos||[]), ref]}); }
-      else {
-        if((f.type||'').startsWith('image/')) updateP(pid,{photos:[...(safe.find(x=>x.id===pid)?.photos||[]), ref]});
-        else updateP(pid,{resume:ref});
+const removeP = async (id) => {
+  const ok = await askConfirm(); if (!ok) return;
+  const p = safe.find(x => x.id === id);
+  try {
+    if (p?.resume) await deleteFileRef(p.resume);
+    for (const ph of ensureArray(p?.photos)) await deleteFileRef(ph);
+  } catch {}
+  setProspects(safe.filter(x => x.id !== id));
+};
+
+const onDropFiles = async (pid, files, into='auto') => {
+  if (!files || !files.length) return;
+  for (const f of Array.from(files)) {
+    const ref = await attachFile(f); if (!ref) continue;
+    if (into === 'resume') {
+      updateP(pid, { resume: ref });
+    } else if (into === 'photos') {
+      const prev = safe.find(x => x.id === pid)?.photos || [];
+      updateP(pid, { photos: [ ...prev, ref ] });
+    } else {
+      if ((f.type || '').startsWith('image/')) {
+        const prev = safe.find(x => x.id === pid)?.photos || [];
+        updateP(pid, { photos: [ ...prev, ref ] });
+      } else {
+        updateP(pid, { resume: ref });
       }
     }
-  };
+  }
+};
+
 
   const filtered = safe
     .filter(p=>!activeProfileId || p.profileId===activeProfileId)
@@ -2179,7 +2185,10 @@ useAutosize(blurbRef, selected?.blurb);
       if (prof?.resume) await deleteFileRef(prof.resume);
       for (const ph of ensureArray(prof?.photos)) await deleteFileRef(ph);
     } catch {}
-    const next=profiles.filter(k=>k.id!==id); saveProfile({ ...(profile||{}), profiles:next, updatedAt:Date.now() }); if(selId===id) setSelId(next[0]?.id||''); setMenu(s=>({ ...s, open:false }))
+    const next = profiles.filter(k => k.id !== id);
+saveProfile({ ...(profile || {}), profiles: next, updatedAt: Date.now() });
+if (selId === id) setSelId(next[0]?.id || '');
+setMenu(s => ({ ...s, open: false }));
 
   return (
     <div className="space-y-4">
@@ -2339,21 +2348,21 @@ useAutosize(blurbRef, selected?.blurb);
     )}
 
     <input
-      id={`profile-photos-${selected.id}`}
-      type="file"
-      accept="image/*"
-      multiple
-      className="hidden"
-      onChange={async (e) => {
-        const fs = Array.from(e.target.files || []);
-        if (fs.length) {
-          const refs = [];
-          for (const f of fs) refs.push(await attachFile(f));
-          updateProfile(selected.id, { photos: [ ...(selected.photos||[]), ...refs ] });
-        }
-        e.target.value = "";
-      }}
-    />
+  id={`profile-photos-${selected.id}`}
+  type="file"
+  accept="image/*"
+  multiple
+  className="hidden"
+  onChange={async (e) => {
+    const fs = Array.from(e.target.files || []);
+    if (fs.length) {
+      const refs = [];
+      for (const f of fs) refs.push(await attachFile(f));
+      updateProfile(selected.id, { photos: [ ...(selected.photos || []), ...refs ] });
+    }
+    e.target.value = "";
+  }}
+/>
   </div>
 </div>
 
