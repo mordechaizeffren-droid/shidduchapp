@@ -359,7 +359,7 @@ function useFilePreview(fileRef) {
   return url;
 }
 
-// --- MiniPreview (PDFs contain, Images cover) ---
+// --- MiniPreview (uniform tile: PDFs contain, Images cover) ---
 function MiniPreview({ fileRef }) {
   const url = useFilePreview(fileRef);
   const type = (fileRef?.type || "").toLowerCase();
@@ -367,7 +367,6 @@ function MiniPreview({ fileRef }) {
   const isImg = type.startsWith("image/");
   const isPdf = type === "application/pdf" || name.endsWith(".pdf");
 
-  const wrapRef = React.useRef(null);
   const [pdfThumb, setPdfThumb] = React.useState("");
   const [loading, setLoading] = React.useState(false);
 
@@ -392,7 +391,7 @@ function MiniPreview({ fileRef }) {
 
         const page = await doc.getPage(1);
 
-        // Render to canvas at ~160px width
+        // Render first page around 160px wide (hi-DPI aware)
         const targetW = 160;
         const v1 = page.getViewport({ scale: 1 });
         const dpr = Math.max(1, window.devicePixelRatio || 1);
@@ -408,7 +407,7 @@ function MiniPreview({ fileRef }) {
 
         setPdfThumb(canvas.toDataURL("image/png"));
       } catch {
-        // ignore
+        // fall back to icon
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -420,13 +419,11 @@ function MiniPreview({ fileRef }) {
   if (!fileRef) return null;
 
   return (
-    <div
-      ref={wrapRef}
-      className="w-40 h-28 rounded-md bg-white border overflow-hidden relative flex items-center justify-center"
-    >
+    // Fixed tile size — MATCH the Resume box (w-40 h-28)
+    <div className="w-40 h-28 rounded-md bg-white border overflow-hidden relative flex items-center justify-center">
       {loading && <div className="absolute inset-0 animate-pulse bg-gray-100" />}
 
-      {/* Image → cover (fills box, may crop) */}
+      {/* Images fill box uniformly (may crop) */}
       {isImg && url && (
         <img
           src={url}
@@ -436,7 +433,7 @@ function MiniPreview({ fileRef }) {
         />
       )}
 
-      {/* PDF → contain (mini full-page inside box) */}
+      {/* PDFs show mini full page (no crop) */}
       {isPdf && pdfThumb && (
         <img
           src={pdfThumb}
@@ -2262,13 +2259,13 @@ useAutosize(blurbRef, selected?.blurb);
   )}
 </div>
   
-   {/* Photos (now with Delete via long-press, width-locked thumbnails) */}
+   {/* Photos (uniform tile; images cover, same size as Resume) */}
 <div>
   <div className="text-xs mb-1">Photos</div>
 
   <div className="relative inline-block">
     {selected.photos?.[1] && (
-      <div className="absolute left-2 top-2 w-40 rounded-md bg-white border overflow-hidden opacity-70 pointer-events-none -z-0">
+      <div className="absolute left-2 top-2 w-40 h-28 rounded-md bg-white border overflow-hidden opacity-70 pointer-events-none -z-0">
         <MiniPreview fileRef={selected.photos[1]} />
       </div>
     )}
@@ -2285,7 +2282,7 @@ useAutosize(blurbRef, selected?.blurb);
           }}
         >
           <div
-            className="w-40 rounded-md bg-white border overflow-hidden cursor-pointer"
+            className="cursor-pointer"
             onClick={() => {
               setViewerPhotos(selected.photos || []);
               setViewerIndex(0);
@@ -2303,12 +2300,12 @@ useAutosize(blurbRef, selected?.blurb);
               }
             }}
           >
-            {/* MiniPreview itself locks by width; height auto-scales */}
+            {/* MiniPreview enforces the same w-40 h-28 tile as Resume */}
             <MiniPreview fileRef={selected.photos[0]} />
           </div>
         </LongPressShare>
 
-        {/* small add button */}
+        {/* add button */}
         <button
           type="button"
           onClick={() => document.getElementById(`profile-photos-${selected.id}`)?.click()}
@@ -2320,10 +2317,9 @@ useAutosize(blurbRef, selected?.blurb);
       <button
         type="button"
         onClick={() => document.getElementById(`profile-photos-${selected.id}`)?.click()}
-        className="w-40 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 shadow-sm flex flex-col items-center justify-center py-8"
+        className="w-40 h-28 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 shadow-sm flex items-center justify-center"
       >
         <div className="text-3xl leading-none text-gray-400">+</div>
-        <div className="text-[11px] text-gray-500 mt-1">Add photos</div>
       </button>
     )}
 
@@ -2345,7 +2341,8 @@ useAutosize(blurbRef, selected?.blurb);
     />
   </div>
 </div>
-         
+
+ 
            {viewerFile && (
   <Viewer
     fileRef={viewerFile}
