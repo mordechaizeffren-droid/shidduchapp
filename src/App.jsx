@@ -2205,47 +2205,54 @@ useAutosize(blurbRef, selected?.blurb);
       {selected ? (
         <>
           <div className="grid grid-cols-2 gap-2">
-    {/* Resume — simplified (now with Delete via long-press) */}
+   {/* Resume — fixed tile (uses MiniPreview size directly) */}
 <div>
   <div className="text-xs mb-1">Resume</div>
 
   {selected.resume ? (
-    <>
-      <LongPressShare
-        fileRef={selected.resume}
-        onDelete={async () => {
-          const ok = await askConfirm(); if (!ok) return;
-          try { if (selected.resume) await deleteFileRef(selected.resume); } catch {}
-          updateProfile(selected.id, { resume: null });
+    <LongPressShare
+      fileRef={selected.resume}
+      onDelete={async () => {
+        const ok = await askConfirm(); if (!ok) return;
+        try { if (selected.resume) await deleteFileRef(selected.resume); } catch {}
+        updateProfile(selected.id, { resume: null });
+      }}
+    >
+      <div
+        className="cursor-pointer inline-block"
+        title="Tap to view • long-press for menu"
+        onClick={() => {
+          setViewerFile(selected.resume);
+          setViewerPhotos([]);
+          setViewerIndex(0);
         }}
-      >
-        <div
-          className="group cursor-pointer inline-block"
-          onClick={() => {
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
             setViewerFile(selected.resume);
             setViewerPhotos([]);
             setViewerIndex(0);
-          }}
-          title="Tap to view • long-press for menu"
-        >
-          <div className="w-40">
-            <MiniPreview fileRef={selected.resume} />
-          </div>
-        </div>
-      </LongPressShare>
-    </>
+          }
+        }}
+      >
+        {/* IMPORTANT: no extra width/height wrapper here.
+           MiniPreview itself provides the fixed w-40 h-28 tile. */}
+        <MiniPreview fileRef={selected.resume} />
+      </div>
+    </LongPressShare>
   ) : (
     <button
       type="button"
       onClick={() => document.getElementById(`profile-resume-${selected.id}`)?.click()}
-      className="h-28 w-40 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 shadow-sm flex flex-col items-center justify-center"
+      className="w-40 h-28 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 shadow-sm flex items-center justify-center"
     >
       <div className="text-3xl leading-none text-gray-400">+</div>
-      <div className="text-xs text-gray-500 mt-1">Add resume</div>
       <input
         id={`profile-resume-${selected.id}`}
         type="file"
-        accept="*/*"
+        accept="application/pdf,image/*"
         className="hidden"
         onChange={async (e) => {
           const f = e.target.files?.[0];
@@ -2259,7 +2266,8 @@ useAutosize(blurbRef, selected?.blurb);
     </button>
   )}
 </div>
-  
+
+
    {/* Photos (uniform tile; images cover, same size as Resume) */}
 <div>
   <div className="text-xs mb-1">Photos</div>
