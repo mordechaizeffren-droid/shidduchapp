@@ -1494,11 +1494,11 @@ function Prospects({
   };
 
   const addProfile = () => {
-    const k = { id: uid(), name:'', photos:[], resume:null, blurb:'', updatedAt: Date.now() };
-    saveProfile({ ...(profile||{}), profiles:[...profiles, k], updatedAt: Date.now() });
-    setActiveProfileId(k.id);
-  };
-  
+  const k = { id: uid(), name:'', photos:[], resume:null, blurb:'', updatedAt: Date.now() };
+  saveProfile({ ...(profile||{}), profiles:[...profiles, k], updatedAt: Date.now() });
+  setActiveProfileId(k.id);
+};
+
 const updateP = (id, patch) =>
   setProspects(safe.map(x => x.id === id ? { ...x, ...patch, updatedAt: Date.now() } : x));
 
@@ -1531,7 +1531,6 @@ const onDropFiles = async (pid, files, into='auto') => {
     }
   }
 };
-
 
   const filtered = safe
     .filter(p=>!activeProfileId || p.profileId===activeProfileId)
@@ -2270,25 +2269,29 @@ setMenu(s => ({ ...s, open: false }));
     </LongPressShare>
   ) : (
     <button
-      type="button"
-      onClick={() => document.getElementById(`profile-resume-${selected.id}`)?.click()}
-      className="w-40 h-28 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 shadow-sm flex items-center justify-center"
-    >
-      <div className="text-3xl leading-none text-gray-400">+</div>
-      <input
-        id={`profile-resume-${selected.id}`}
-        type="file"
-        accept="application/pdf,image/*"
-        className="hidden"
-        onChange={async (e) => {
-          const f = e.target.files?.[0];
-          if (f) {
-            const ref = await attachFile(f);
-            updateProfile(selected.id, { resume: ref });
-          }
-          e.target.value = "";
-        }}
-      />
+  type="button"
+  onClick={() => document.getElementById(`profile-photos-${selected.id}`)?.click()}
+  className="w-28 h-40 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 shadow-sm flex items-center justify-center"
+>
+  <div className="text-3xl leading-none text-gray-400">+</div>
+</button>
+<input
+  id={`profile-photos-${selected.id}`}
+  type="file"
+  accept="image/*"
+  multiple
+  className="hidden"
+  onChange={async (e) => {
+    const fs = Array.from(e.target.files || []);
+    if (fs.length) {
+      const refs = [];
+      for (const f of fs) refs.push(await attachFile(f));
+      updateProfile(selected.id, { photos: [ ...(selected.photos || []), ...refs ] });
+    }
+    e.target.value = "";
+  }}
+/>
+
     </button>
   )}
 </div>
