@@ -2169,7 +2169,7 @@ useAutosize(blurbRef, selected?.blurb);
   const [menu,setMenu]=useState({open:false,profileId:'',x:0,y:0});
   const { ask: askConfirm, Confirm } = useConfirm();
   const menuRef=useRef(null);
-  useEffect(()=>{ if(!menu.open) return; const close=(e)=>{ if(menuRef.current && !menuRef.current.contains(e.target)) setMenu(s=>({...s,open:false})); }; document.addEventListener('pointerdown', close, true); return ()=>document.removeEventListener('pointerdown', close, true); },[menu.open]);
+  useEffect(()=>{ if(!menu.open) return; const close=(e)=>{ if(menuRef.current && !menuRef.current.contains(e.target)) setMenu(s=>({ ...s, open:false })) document.addEventListener('pointerdown', close, true); return ()=>document.removeEventListener('pointerdown', close, true); },[menu.open]);
   const lpRef=useRef(null);
   const startLP=(el,id)=>{ clearTimeout(lpRef.current); lpRef.current=setTimeout(()=>{ const r=el?.getBoundingClientRect?.(); if(!r) return; setMenu({open:true,profileId:id,x:r.left+r.width/2,y:r.bottom+8}); },500); };
   const cancelLP=()=> clearTimeout(lpRef.current);
@@ -2179,7 +2179,7 @@ useAutosize(blurbRef, selected?.blurb);
       if (prof?.resume) await deleteFileRef(prof.resume);
       for (const ph of ensureArray(prof?.photos)) await deleteFileRef(ph);
     } catch {}
-    const next=profiles.filter(k=>k.id!==id); saveProfile({ ...(profile||{}), profiles:next, updatedAt:Date.now() }); if(selId===id) setSelId(next[0]?.id||''); setMenu(s=>({...s,open:false})); };
+    const next=profiles.filter(k=>k.id!==id); saveProfile({ ...(profile||{}), profiles:next, updatedAt:Date.now() }); if(selId===id) setSelId(next[0]?.id||''); setMenu(s=>({ ...s, open:false }))
 
   return (
     <div className="space-y-4">
@@ -2349,7 +2349,7 @@ useAutosize(blurbRef, selected?.blurb);
         if (fs.length) {
           const refs = [];
           for (const f of fs) refs.push(await attachFile(f));
-          updateProfile(selected.id, { photos: [...(selected.photos || []), ...refs] });
+          updateProfile(selected.id, { photos: [ ...(selected.photos||[]), ...refs ] });
         }
         e.target.value = "";
       }}
