@@ -359,7 +359,7 @@ function useFilePreview(fileRef) {
   return url;
 }
 
-// --- MiniPreview (uniform tile: PDFs contain, Images cover) ---
+// --- MiniPreview (portrait tile: PDFs contain, Images cover) ---
 function MiniPreview({ fileRef }) {
   const url = useFilePreview(fileRef);
   const type = (fileRef?.type || "").toLowerCase();
@@ -380,7 +380,7 @@ function MiniPreview({ fileRef }) {
         setLoading(true);
         const pdfjs = await loadPdfjs();
 
-        // Use cached blob if available
+        // cached blob → AB, else signed URL
         let ab = null;
         try {
           const blob = await dbFiles.getItem(fileRef.id);
@@ -392,11 +392,11 @@ function MiniPreview({ fileRef }) {
         if (cancelled) return;
         const page = await doc.getPage(1);
 
-        // Render first page around 160px wide (hi-DPI aware)
-        const targetW = 160;
+        // Render ~160px tall (since our tile is taller than wide)
+        const targetH = 160; // Tailwind h-40 = 160px
         const v1 = page.getViewport({ scale: 1 });
         const dpr = Math.max(1, window.devicePixelRatio || 1);
-        const scale = (targetW / v1.width) * dpr;
+        const scale = (targetH / v1.height) * dpr;
         const viewport = page.getViewport({ scale });
 
         const canvas = document.createElement("canvas");
@@ -408,7 +408,7 @@ function MiniPreview({ fileRef }) {
 
         setPdfThumb(canvas.toDataURL("image/png"));
       } catch {
-        // fallback to 📄 icon
+        // fallback to icon
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -419,12 +419,12 @@ function MiniPreview({ fileRef }) {
 
   if (!fileRef) return null;
 
-  // Fixed tile: w-40 h-28
+  // PORTRAIT TILE: w-28 h-40 (page-shaped)
   return (
-    <div className="w-40 h-28 rounded-md bg-white border overflow-hidden relative flex items-center justify-center">
+    <div className="w-28 h-40 rounded-md bg-white border overflow-hidden relative flex items-center justify-center">
       {loading && <div className="absolute inset-0 animate-pulse bg-gray-100" />}
 
-      {/* Photos: fill box (cropped if needed) */}
+      {/* Photos: fill box (may crop) */}
       {isImg && url && (
         <img
           src={url}
@@ -434,7 +434,7 @@ function MiniPreview({ fileRef }) {
         />
       )}
 
-      {/* PDFs: keep proportions (mini page inside tile) */}
+      {/* PDFs: mini full page, no outer bars (box matches page aspect) */}
       {isPdf && pdfThumb && (
         <img
           src={pdfThumb}
@@ -444,7 +444,7 @@ function MiniPreview({ fileRef }) {
         />
       )}
 
-      {/* Fallback icon */}
+      {/* Fallbacks */}
       {!isImg && !isPdf && !loading && (
         <div className="text-3xl text-gray-400">📄</div>
       )}
@@ -2236,6 +2236,24 @@ useAutosize(blurbRef, selected?.blurb);
     }
   }}
   title="Tap to view • long-press for menu"
+<div
+  className="inline-block w-28 h-40 cursor-pointer"
+  onClick={() => {
+    setViewerFile(selected.resume);
+    setViewerPhotos([]);
+    setViewerIndex(0);
+  }}
+  role="button"
+  tabIndex={0}
+  title="Tap to view • long-press for menu"
+  onKeyDown={(e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      setViewerFile(selected.resume);
+      setViewerPhotos([]);
+      setViewerIndex(0);
+    }
+  }}
 >
   <MiniPreview fileRef={selected.resume} />
 </div>
@@ -2278,37 +2296,38 @@ useAutosize(blurbRef, selected?.blurb);
     )}
 
     {selected.photos?.[0] ? (
-      <LongPressShare
-        fileRef={selected.photos[0]}
-        onDelete={async () => {
-          const ok = await askConfirm(); if (!ok) return;
-          const next = (selected.photos || []).slice(1);
-          try { await deleteFileRef(selected.photos[0]); } catch {}
-          updateProfile(selected.id, { photos: next });
-        }}
-      >
-        <div
-          className="inline-block w-40 h-28 cursor-pointer"
-          onClick={() => {
-            setViewerPhotos(selected.photos || []);
-            setViewerIndex(0);
-            setViewerFile(selected.photos?.[0]);
-          }}
-          role="button"
-          tabIndex={0}
-          title="Tap to preview • long-press for menu"
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              setViewerPhotos(selected.photos || []);
-              setViewerIndex(0);
-              setViewerFile(selected.photos?.[0]);
-            }
-          }}
-        >
-          <MiniPreview fileRef={selected.photos[0]} />
-        </div>
-      </LongPressShare>
+    <LongPressShare
+  fileRef={selected.photos[0]}
+  onDelete={async () => {
+    const ok = await askConfirm(); if (!ok) return;
+    const next = (selected.photos || []).slice(1);
+    try { await deleteFileRef(selected.photos[0]); } catch {}
+    updateProfile(selected.id, { photos: next });
+  }}
+>
+  <div
+    className="inline-block w-28 h-40 cursor-pointer"
+    onClick={() => {
+      setViewerPhotos(selected.photos || []);
+      setViewerIndex(0);
+      setViewerFile(selected.photos?.[0]);
+    }}
+    role="button"
+    tabIndex={0}
+    title="Tap to preview • long-press for menu"
+    onKeyDown={(e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        setViewerPhotos(selected.photos || []);
+        setViewerIndex(0);
+        setViewerFile(selected.photos?.[0]);
+      }
+    }}
+  >
+    <MiniPreview fileRef={selected.photos[0]} />
+  </div>
+</LongPressShare>
+
     ) : (
       <button
         type="button"
