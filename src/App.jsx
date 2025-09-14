@@ -1979,20 +1979,28 @@ useAutosize(notesRef, p.notes);
         }}
       >
         <div
-          className="group cursor-pointer inline-block"
-          onClick={() => {
-            setViewerFile(p.resume);
-            setViewerPhotos([]);
-            setViewerIndex(0);
-          }}
-          title="Tap to view • long-press for menu"
-        >
-          <div
   id={`prospect-resume-box-${p.id}`}
   className="inline-block w-40 cursor-pointer"
+  onClick={() => {
+    setViewerFile(p.resume);
+    setViewerPhotos([]);
+    setViewerIndex(0);
+  }}
+  role="button"
+  tabIndex={0}
+  title="Tap to view • long-press for menu"
+  onKeyDown={(e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      setViewerFile(p.resume);
+      setViewerPhotos([]);
+      setViewerIndex(0);
+    }
+  }}
 >
   <MiniPreview fileRef={p.resume} />
 </div>
+
 
         </div>
       </LongPressShare>
