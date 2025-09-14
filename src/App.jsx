@@ -2264,7 +2264,7 @@ useAutosize(blurbRef, selected?.blurb);
   )}
 </div>
   
-   {/* Photos (now with Delete via long-press, width-locked thumbnails) */}
+  {/* Photos — width-locked like Resume (no fixed height) */}
 <div>
   <div className="text-xs mb-1">Photos</div>
 
@@ -2276,56 +2276,46 @@ useAutosize(blurbRef, selected?.blurb);
     )}
 
     {selected.photos?.[0] ? (
-      <div className="relative z-10">
-        <LongPressShare
-          fileRef={selected.photos[0]}
-          onDelete={async () => {
-            const ok = await askConfirm(); if (!ok) return;
-            const next = (selected.photos || []).slice(1);
-            try { await deleteFileRef(selected.photos[0]); } catch {}
-            updateProfile(selected.id, { photos: next });
+      <LongPressShare
+        fileRef={selected.photos[0]}
+        onDelete={async () => {
+          const ok = await askConfirm(); if (!ok) return;
+          const next = (selected.photos || []).slice(1);
+          try { await deleteFileRef(selected.photos[0]); } catch {}
+          updateProfile(selected.id, { photos: next });
+        }}
+      >
+        <div
+          className="inline-block w-40 cursor-pointer"
+          onClick={() => {
+            setViewerPhotos(selected.photos || []);
+            setViewerIndex(0);
+            setViewerFile(selected.photos?.[0]);
           }}
-        >
-          <div
-            className="w-40 rounded-md bg-white border overflow-hidden cursor-pointer"
-            onClick={() => {
+          role="button"
+          tabIndex={0}
+          title="Tap to preview • long-press for menu"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
               setViewerPhotos(selected.photos || []);
               setViewerIndex(0);
               setViewerFile(selected.photos?.[0]);
-            }}
-            role="button"
-            tabIndex={0}
-            title="Tap to preview • long-press for menu"
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                setViewerPhotos(selected.photos || []);
-                setViewerIndex(0);
-                setViewerFile(selected.photos?.[0]);
-              }
-            }}
-          >
-            {/* MiniPreview itself locks by width; height auto-scales */}
-            <MiniPreview fileRef={selected.photos[0]} />
-          </div>
-        </LongPressShare>
-
-        {/* small add button */}
-        <button
-          type="button"
-          onClick={() => document.getElementById(`profile-photos-${selected.id}`)?.click()}
-          className="absolute -bottom-3 -right-3 z-20 w-8 h-8 rounded-full border bg-white shadow flex items-center justify-center"
-          title="Add photo"
-        >+</button>
-      </div>
+            }
+          }}
+        >
+          {/* MiniPreview now width-locks; height auto-scales like Resume */}
+          <MiniPreview fileRef={selected.photos[0]} />
+        </div>
+      </LongPressShare>
     ) : (
       <button
         type="button"
         onClick={() => document.getElementById(`profile-photos-${selected.id}`)?.click()}
         className="w-40 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 shadow-sm flex flex-col items-center justify-center py-8"
+        title="Add photos"
       >
         <div className="text-3xl leading-none text-gray-400">+</div>
-        <div className="text-[11px] text-gray-500 mt-1">Add photos</div>
       </button>
     )}
 
@@ -2340,13 +2330,14 @@ useAutosize(blurbRef, selected?.blurb);
         if (fs.length) {
           const refs = [];
           for (const f of fs) refs.push(await attachFile(f));
-          updateProfile(selected.id, { photos: [...(selected.photos || []), ...refs] });
+          updateProfile(selected.id, { photos: [ ...(selected.photos || []), ...refs ] });
         }
         e.target.value = "";
       }}
     />
   </div>
 </div>
+
          
            {viewerFile && (
   <Viewer
