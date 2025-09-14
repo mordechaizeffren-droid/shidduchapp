@@ -359,8 +359,8 @@ function useFilePreview(fileRef) {
   return url;
 }
 
-// --- MiniPreview (width-lock: width fixed by parent, height auto by content) ---
-function MiniPreview({ fileRef }) {
+// --- MiniPreview (width-lock; optional forced height for images) ---
+function MiniPreview({ fileRef, forceHeightPx }) {
   const url = useFilePreview(fileRef);
   const type = (fileRef?.type || "").toLowerCase();
   const name = (fileRef?.name || "").toLowerCase();
@@ -392,7 +392,7 @@ function MiniPreview({ fileRef }) {
         if (cancelled) return;
         const page = await doc.getPage(1);
 
-        // Render around the parent’s typical width (~160px for w-40); CSS will scale down/up as needed.
+        // Render around 160px wide (Tailwind w-40); CSS will scale by width.
         const targetW = 160;
         const v1 = page.getViewport({ scale: 1 });
         const dpr = Math.max(1, window.devicePixelRatio || 1);
@@ -419,22 +419,25 @@ function MiniPreview({ fileRef }) {
 
   if (!fileRef) return null;
 
-  // WIDTH-LOCK: parent sets width (e.g., w-40). We never set a fixed height here.
+  // Width-lock; if forceHeightPx is provided, root also gets that fixed height.
   return (
-    <div className="w-full rounded-md bg-white border overflow-hidden relative">
+    <div
+      className="w-full rounded-md bg-white border overflow-hidden relative"
+      style={forceHeightPx ? { height: `${forceHeightPx}px` } : undefined}
+    >
       {loading && <div className="absolute inset-0 animate-pulse bg-gray-100" />}
 
-      {/* Images — scale by width; height auto; keep proportions (no crop) */}
+      {/* Images */}
       {isImg && url && (
         <img
           src={url}
           alt={fileRef.name || "image"}
-          className="block w-full h-auto object-contain select-none"
+          className={forceHeightPx ? "w-full h-full object-cover select-none" : "block w-full h-auto object-contain select-none"}
           draggable={false}
         />
       )}
 
-      {/* PDFs — first page thumbnail; scale by width; height auto (mini full page) */}
+      {/* PDFs (resume mini page) */}
       {isPdf && pdfThumb && (
         <img
           src={pdfThumb}
@@ -444,79 +447,17 @@ function MiniPreview({ fileRef }) {
         />
       )}
 
-      {/* Fallback for other types or PDF render failure */}
+      {/* Fallback */}
       {!isImg && !isPdf && !loading && (
-        <div className="w-full py-10 flex items-center justify-center text-3xl text-gray-400">
-          📄
-        </div>
+        <div className="w-full py-10 flex items-center justify-center text-3xl text-gray-400">📄</div>
       )}
       {isPdf && !pdfThumb && !loading && (
-        <div className="w-full py-10 flex items-center justify-center text-3xl text-gray-400">
-          📄
-        </div>
+        <div className="w-full py-10 flex items-center justify-center text-3xl text-gray-400">📄</div>
       )}
     </div>
   );
 }
 
-// --- Helper: Photo tile that mirrors Resume height ---
-function PhotoTileMatchResume({ resumeBoxId, primaryFile, stackedFile, onAdd, onDelete, onOpen }) {
-  const [h, setH] = React.useState(0);
-
-  React.useEffect(() => {
-    const el = document.getElementById(resumeBoxId);
-    if (!el) return;
-    const apply = () => setH(el.offsetHeight || 0);
-    apply();
-    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(apply) : null;
-    ro?.observe(el);
-    window.addEventListener('load', apply);
-    return () => { ro?.disconnect(); window.removeEventListener('load', apply); };
-  }, [resumeBoxId]);
-
-  // Empty state (no photo yet)
-  if (!primaryFile) {
-    return (
-      <button
-        type="button"
-        onClick={onAdd}
-        className="w-40 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 shadow-sm flex items-center justify-center py-8"
-        title="Add photos"
-      >
-        <div className="text-3xl leading-none text-gray-400">+</div>
-      </button>
-    );
-  }
-
-  return (
-    <div className="relative inline-block">
-      {stackedFile && (
-        <div
-          className="absolute left-2 top-2 w-40 rounded-md bg-white border overflow-hidden opacity-70 pointer-events-none -z-0"
-          style={h ? { height: h } : undefined}
-        >
-          <MiniPreview fileRef={stackedFile} forceHeightPx={h || undefined} />
-        </div>
-      )}
-
-      <LongPressShare fileRef={primaryFile} onDelete={onDelete}>
-        <div
-          className="inline-block w-40 cursor-pointer"
-          onClick={onOpen}
-          role="button"
-          tabIndex={0}
-          title="Tap to preview • long-press for menu"
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(); }
-          }}
-          style={h ? { height: h } : undefined}
-        >
-          <MiniPreview fileRef={primaryFile} forceHeightPx={h || undefined} />
-        </div>
-      </LongPressShare>
-    </div>
-  );
-}
 
 // --- pdf.js (UMD) one-time loader ---
 let _pdfjsPromise = null;
@@ -1979,6 +1920,15 @@ useAutosize(notesRef, p.notes);
         }}
       >
         <div
+          className="group cursor-pointer inline-block"
+          onClick={() => {
+            setViewerFile(p.resume);
+            setViewerPhotos([]);
+            setViewerIndex(0);
+          }}
+          title="Tap to view • long-press for menu"
+        >
+          <div
   id={`prospect-resume-box-${p.id}`}
   className="inline-block w-40 cursor-pointer"
   onClick={() => {
@@ -2000,7 +1950,6 @@ useAutosize(notesRef, p.notes);
 >
   <MiniPreview fileRef={p.resume} />
 </div>
-
 
         </div>
       </LongPressShare>
@@ -2032,7 +1981,8 @@ useAutosize(notesRef, p.notes);
 
   {/* Photos — long-press to Share / Save / Delete */}
   <div>
-  <div className="text-xs mb-1">Photos</div>
+    
+<div className="text-xs mb-1">Photos</div>
 
 <PhotoTileMatchResume
   resumeBoxId={`prospect-resume-box-${p.id}`}
@@ -2042,13 +1992,13 @@ useAutosize(notesRef, p.notes);
   onDelete={async () => {
     const ok = await askConfirm(); if (!ok) return;
     const next = (p.photos || []).slice(1);
-    try { await deleteFileRef(p.photos[0]); } catch {}
+    try { if (p.photos?.[0]) await deleteFileRef(p.photos[0]); } catch {}
     updateP(p.id, { photos: next });
   }}
   onOpen={() => {
     setViewerFile(p.photos?.[0]);
-    setViewerPhotos(p.photos || []);
-    setViewerIndex(0);
+    setViewPhotos(p.photos || []);
+    setViewIndex(0);
   }}
 />
 
@@ -2068,6 +2018,33 @@ useAutosize(notesRef, p.notes);
     e.target.value = "";
   }}
 />
+
+      ) : (
+        <button
+          type="button"
+          onClick={() => document.getElementById(`prospect-photos-${p.id}`)?.click()}
+          className="h-28 w-40 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 shadow-sm flex flex-col items-center justify-center"
+        >
+          <div className="text-3xl leading-none text-gray-400">+</div>
+          <div className="text-[11px] text-gray-500 mt-1">Add photos</div>
+        </button>
+      )}
+      <input
+        id={`prospect-photos-${p.id}`}
+        type="file"
+        accept="image/*"
+        multiple
+        className="hidden"
+        onChange={async (e) => {
+          const fs = Array.from(e.target.files || []);
+          if (fs.length) {
+            const refs = [];
+            for (const f of fs) refs.push(await attachFile(f));
+            onChange({ photos: [...(p.photos || []), ...refs] });
+          }
+          e.target.value = "";
+        }}
+      />
     </div>
   </div>
 </div>
@@ -2301,71 +2278,105 @@ useAutosize(blurbRef, selected?.blurb);
   )}
 </div>
   
-   {/* Photos (now with Delete via long-press, width-locked thumbnails) */}
+{/* Photos — width-locked like Resume; height matched to resume */}
 <div>
   <div className="text-xs mb-1">Photos</div>
 
-  <PhotoTileMatchResume
-  resumeBoxId={`profile-resume-box-${selected.id}`}
-  primaryFile={selected.photos?.[0]}
-  stackedFile={selected.photos?.[1]}
-  onAdd={() => document.getElementById(`profile-photos-${selected.id}`)?.click()}
-  onDelete={async () => {
-    const ok = await askConfirm(); if (!ok) return;
-    const next = (selected.photos || []).slice(1);
-    try { if (selected.photos?.[0]) await deleteFileRef(selected.photos[0]); } catch {}
-    updateProfile(selected.id, { photos: next });
-  }}
-  onOpen={() => {
-    setViewerPhotos(selected.photos || []);
-    setViewerIndex(0);
-    setViewerFile(selected.photos?.[0]);
-  }}
-/>
+  {(() => {
+    // Measure the resume box height and mirror it for the photo tile
+    const [resumeH, setResumeH] = React.useState(0);
 
-            {/* MiniPreview itself locks by width; height auto-scales */}
-            <MiniPreview fileRef={selected.photos[0]} />
+    React.useEffect(() => {
+      const id = `profile-resume-box-${selected.id}`;
+      const el = document.getElementById(id);
+      if (!el) return;
+
+      const apply = () => setResumeH(el.offsetHeight || 0);
+      apply();
+
+      const ro = new ResizeObserver(() => apply());
+      ro.observe(el);
+      window.addEventListener('load', apply);
+      return () => {
+        ro.disconnect();
+        window.removeEventListener('load', apply);
+      };
+    }, [selected.id, selected.resume]);
+
+    return (
+      <div className="relative inline-block">
+        {selected.photos?.[1] && (
+          <div className="absolute left-2 top-2 w-40 rounded-md bg-white border overflow-hidden opacity-70 pointer-events-none -z-0">
+            <MiniPreview fileRef={selected.photos[1]} forceHeightPx={resumeH || undefined} />
           </div>
-        </LongPressShare>
+        )}
 
-        {/* small add button */}
-        <button
-          type="button"
-          onClick={() => document.getElementById(`profile-photos-${selected.id}`)?.click()}
-          className="absolute -bottom-3 -right-3 z-20 w-8 h-8 rounded-full border bg-white shadow flex items-center justify-center"
-          title="Add photo"
-        >+</button>
+        {selected.photos?.[0] ? (
+          <LongPressShare
+            fileRef={selected.photos[0]}
+            onDelete={async () => {
+              const ok = await askConfirm(); if (!ok) return;
+              const next = (selected.photos || []).slice(1);
+              try { await deleteFileRef(selected.photos[0]); } catch {}
+              updateProfile(selected.id, { photos: next });
+            }}
+          >
+            <div
+              className="inline-block w-40 cursor-pointer"
+              onClick={() => {
+                setViewerPhotos(selected.photos || []);
+                setViewerIndex(0);
+                setViewerFile(selected.photos?.[0]);
+              }}
+              role="button"
+              tabIndex={0}
+              title="Tap to preview • long-press for menu"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  setViewerPhotos(selected.photos || []);
+                  setViewerIndex(0);
+                  setViewerFile(selected.photos?.[0]);
+                }
+              }}
+            >
+              {/* Match resume height so the tiles are identical */}
+              <MiniPreview fileRef={selected.photos[0]} forceHeightPx={resumeH || undefined} />
+            </div>
+          </LongPressShare>
+        ) : (
+          <button
+            type="button"
+            onClick={() => document.getElementById(`profile-photos-${selected.id}`)?.click()}
+            className="w-40 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 shadow-sm flex flex-col items-center justify-center py-8"
+            title="Add photos"
+          >
+            <div className="text-3xl leading-none text-gray-400">+</div>
+          </button>
+        )}
+
+        <input
+          id={`profile-photos-${selected.id}`}
+          type="file"
+          accept="image/*"
+          multiple
+          className="hidden"
+          onChange={async (e) => {
+            const fs = Array.from(e.target.files || []);
+            if (fs.length) {
+              const refs = [];
+              for (const f of fs) refs.push(await attachFile(f));
+              updateProfile(selected.id, { photos: [ ...(selected.photos || []), ...refs ] });
+            }
+            e.target.value = "";
+          }}
+        />
       </div>
-    ) : (
-      <button
-        type="button"
-        onClick={() => document.getElementById(`profile-photos-${selected.id}`)?.click()}
-        className="w-40 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 shadow-sm flex flex-col items-center justify-center py-8"
-      >
-        <div className="text-3xl leading-none text-gray-400">+</div>
-        <div className="text-[11px] text-gray-500 mt-1">Add photos</div>
-      </button>
-    )}
-
-    <input
-  id={`profile-photos-${selected.id}`}
-  type="file"
-  accept="image/*"
-  multiple
-  className="hidden"
-  onChange={async (e) => {
-    const fs = Array.from(e.target.files || []);
-    if (fs.length) {
-      const refs = [];
-      for (const f of fs) refs.push(await attachFile(f));
-      updateProfile(selected.id, { photos: [ ...(selected.photos || []), ...refs ] });
-    }
-    e.target.value = "";
-  }}
-/>
-  </div>
+    );
+  })()}
 </div>
-         
+
+
            {viewerFile && (
   <Viewer
     fileRef={viewerFile}
