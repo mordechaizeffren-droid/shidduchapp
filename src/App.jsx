@@ -1928,29 +1928,9 @@ useAutosize(notesRef, p.notes);
           }}
           title="Tap to view • long-press for menu"
         >
-          <div
-  id={`prospect-resume-box-${p.id}`}
-  className="inline-block w-40 cursor-pointer"
-  onClick={() => {
-    setViewerFile(p.resume);
-    setViewerPhotos([]);
-    setViewerIndex(0);
-  }}
-  role="button"
-  tabIndex={0}
-  title="Tap to view • long-press for menu"
-  onKeyDown={(e) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      setViewerFile(p.resume);
-      setViewerPhotos([]);
-      setViewerIndex(0);
-    }
-  }}
->
-  <MiniPreview fileRef={p.resume} />
-</div>
-
+          <div className="w-40">
+            <MiniPreview fileRef={p.resume} />
+          </div>
         </div>
       </LongPressShare>
     ) : (
@@ -1981,44 +1961,49 @@ useAutosize(notesRef, p.notes);
 
   {/* Photos — long-press to Share / Save / Delete */}
   <div>
-    
-<div className="text-xs mb-1">Photos</div>
+    <div className="text-xs mb-1">Photos</div>
 
-<PhotoTileMatchResume
-  resumeBoxId={`prospect-resume-box-${p.id}`}
-  primaryFile={p.photos?.[0]}
-  stackedFile={p.photos?.[1]}
-  onAdd={() => document.getElementById(`prospect-photos-${p.id}`)?.click()}
-  onDelete={async () => {
-    const ok = await askConfirm(); if (!ok) return;
-    const next = (p.photos || []).slice(1);
-    try { if (p.photos?.[0]) await deleteFileRef(p.photos[0]); } catch {}
-    updateP(p.id, { photos: next });
-  }}
-  onOpen={() => {
-    setViewerFile(p.photos?.[0]);
-    setViewPhotos(p.photos || []);
-    setViewIndex(0);
-  }}
-/>
+    <div className="relative inline-block">
+      {p.photos?.[1] && (
+        <div className="absolute left-2 top-2 w-40 h-28 rounded-md bg-white border overflow-hidden opacity-70 pointer-events-none -z-0">
+          <MiniPreview fileRef={p.photos[1]} />
+        </div>
+      )}
 
-<input
-  id={`prospect-photos-${p.id}`}
-  type="file"
-  accept="image/*"
-  multiple
-  className="hidden"
-  onChange={async (e) => {
-    const fs = Array.from(e.target.files || []);
-    if (fs.length) {
-      const refs = [];
-      for (const f of fs) refs.push(await attachFile(f));
-      updateP(p.id, { photos: [ ...(p.photos || []), ...refs ] });
-    }
-    e.target.value = "";
-  }}
-/>
+      {p.photos?.[0] ? (
+        <div className="relative z-10">
+          <LongPressShare
+            fileRef={p.photos[0]}
+            onDelete={async () => {
+              const ok = await askConfirm(); if (!ok) return;
+              const next = (p.photos || []).slice(1);
+              await deleteFileRef(p.photos[0]);
+              onChange({ photos: next });
+            }}
+          >
+            <div
+              className="w-40 h-28 rounded-md bg-white border overflow-hidden cursor-pointer"
+              onClick={() => {
+                setViewerPhotos(p.photos || []);
+                setViewerIndex(0);
+                setViewerFile(p.photos?.[0]);
+              }}
+              title="Tap to preview • long-press for menu"
+            >
+              <MiniPreview fileRef={p.photos[0]} />
+            </div>
+          </LongPressShare>
 
+          {/* small add button */}
+          <button
+            type="button"
+            onClick={() => document.getElementById(`prospect-photos-${p.id}`)?.click()}
+            className="absolute -bottom-3 -right-3 z-20 w-8 h-8 rounded-full border bg-white shadow flex items-center justify-center"
+            title="Add photo"
+          >
+            +
+          </button>
+        </div>
       ) : (
         <button
           type="button"
