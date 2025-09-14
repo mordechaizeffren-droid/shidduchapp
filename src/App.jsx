@@ -2305,43 +2305,24 @@ useAutosize(blurbRef, selected?.blurb);
 <div>
   <div className="text-xs mb-1">Photos</div>
 
-  <div className="relative inline-block">
-    {selected.photos?.[1] && (
-      <div className="absolute left-2 top-2 w-40 rounded-md bg-white border overflow-hidden opacity-70 pointer-events-none -z-0">
-        <MiniPreview fileRef={selected.photos[1]} />
-      </div>
-    )}
+  <PhotoTileMatchResume
+  resumeBoxId={`profile-resume-box-${selected.id}`}
+  primaryFile={selected.photos?.[0]}
+  stackedFile={selected.photos?.[1]}
+  onAdd={() => document.getElementById(`profile-photos-${selected.id}`)?.click()}
+  onDelete={async () => {
+    const ok = await askConfirm(); if (!ok) return;
+    const next = (selected.photos || []).slice(1);
+    try { if (selected.photos?.[0]) await deleteFileRef(selected.photos[0]); } catch {}
+    updateProfile(selected.id, { photos: next });
+  }}
+  onOpen={() => {
+    setViewerPhotos(selected.photos || []);
+    setViewerIndex(0);
+    setViewerFile(selected.photos?.[0]);
+  }}
+/>
 
-    {selected.photos?.[0] ? (
-      <div className="relative z-10">
-        <LongPressShare
-          fileRef={selected.photos[0]}
-          onDelete={async () => {
-            const ok = await askConfirm(); if (!ok) return;
-            const next = (selected.photos || []).slice(1);
-            try { await deleteFileRef(selected.photos[0]); } catch {}
-            updateProfile(selected.id, { photos: next });
-          }}
-        >
-          <div
-            className="w-40 rounded-md bg-white border overflow-hidden cursor-pointer"
-            onClick={() => {
-              setViewerPhotos(selected.photos || []);
-              setViewerIndex(0);
-              setViewerFile(selected.photos?.[0]);
-            }}
-            role="button"
-            tabIndex={0}
-            title="Tap to preview • long-press for menu"
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                setViewerPhotos(selected.photos || []);
-                setViewerIndex(0);
-                setViewerFile(selected.photos?.[0]);
-              }
-            }}
-          >
             {/* MiniPreview itself locks by width; height auto-scales */}
             <MiniPreview fileRef={selected.photos[0]} />
           </div>
@@ -2367,21 +2348,21 @@ useAutosize(blurbRef, selected?.blurb);
     )}
 
     <input
-      id={`profile-photos-${selected.id}`}
-      type="file"
-      accept="image/*"
-      multiple
-      className="hidden"
-      onChange={async (e) => {
-        const fs = Array.from(e.target.files || []);
-        if (fs.length) {
-          const refs = [];
-          for (const f of fs) refs.push(await attachFile(f));
-          updateProfile(selected.id, { photos: [...(selected.photos || []), ...refs] });
-        }
-        e.target.value = "";
-      }}
-    />
+  id={`profile-photos-${selected.id}`}
+  type="file"
+  accept="image/*"
+  multiple
+  className="hidden"
+  onChange={async (e) => {
+    const fs = Array.from(e.target.files || []);
+    if (fs.length) {
+      const refs = [];
+      for (const f of fs) refs.push(await attachFile(f));
+      updateProfile(selected.id, { photos: [ ...(selected.photos || []), ...refs ] });
+    }
+    e.target.value = "";
+  }}
+/>
   </div>
 </div>
          
