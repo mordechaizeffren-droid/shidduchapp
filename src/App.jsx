@@ -1809,20 +1809,17 @@ function FullProspectEditor({ prospect, allProfiles, onChange, onClose, onDelete
   const { ask: askConfirm, Confirm } = useConfirm();
 const notesRef = React.useRef(null);
 useAutosize(notesRef, p.notes);
-// Match photo mini height to resume mini (like MyProfile)
+// === Match photo mini height to resume mini ===
 const [resumeH, setResumeH] = React.useState(0);
 React.useEffect(() => {
   const el = document.getElementById(`prospect-resume-box-${p.id}`);
   if (!el) return;
   const apply = () => setResumeH(el.offsetHeight || 0);
   apply();
-  const ro = new ResizeObserver(() => apply());
+  const ro = new ResizeObserver(apply);
   ro.observe(el);
   window.addEventListener('load', apply);
-  return () => {
-    ro.disconnect();
-    window.removeEventListener('load', apply);
-  };
+  return () => { ro.disconnect(); window.removeEventListener('load', apply); };
 }, [p.id, p.resume]);
 
   // swipe-down to close
@@ -1943,8 +1940,8 @@ React.useEffect(() => {
           title="Tap to view • long-press for menu"
         >
           <div id={`prospect-resume-box-${p.id}`} className="w-40">
-            <MiniPreview fileRef={p.resume} />
-          </div>
+  <MiniPreview fileRef={p.resume} />
+</div>
         </div>
       </LongPressShare>
     ) : (
@@ -1979,7 +1976,10 @@ React.useEffect(() => {
 
     <div className="relative inline-block">
       {p.photos?.[1] && (
-        <div className="absolute left-2 top-2 w-40 rounded-md ...">
+        <div
+  className="absolute left-2 top-2 w-40 h-28 rounded-md bg-white border overflow-hidden opacity-70 pointer-events-none -z-0"
+   style={resumeH ? { height: `${resumeH}px` } : undefined}
+ >
    <MiniPreview fileRef={p.photos[1]} forceHeightPx={resumeH || undefined} />
         </div>
       )}
@@ -2246,7 +2246,7 @@ useAutosize(blurbRef, selected?.blurb);
           }}
           title="Tap to view • long-press for menu"
         >
-          <div className="w-40">
+          <div id={`prospect-resume-box-${p.id}`} className="w-40">
             <MiniPreview fileRef={selected.resume} />
           </div>
         </div>
