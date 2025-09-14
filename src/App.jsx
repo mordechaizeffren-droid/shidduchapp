@@ -459,6 +459,64 @@ function MiniPreview({ fileRef }) {
   );
 }
 
+// --- Helper: Photo tile that mirrors Resume height ---
+function PhotoTileMatchResume({ resumeBoxId, primaryFile, stackedFile, onAdd, onDelete, onOpen }) {
+  const [h, setH] = React.useState(0);
+
+  React.useEffect(() => {
+    const el = document.getElementById(resumeBoxId);
+    if (!el) return;
+    const apply = () => setH(el.offsetHeight || 0);
+    apply();
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(apply) : null;
+    ro?.observe(el);
+    window.addEventListener('load', apply);
+    return () => { ro?.disconnect(); window.removeEventListener('load', apply); };
+  }, [resumeBoxId]);
+
+  // Empty state (no photo yet)
+  if (!primaryFile) {
+    return (
+      <button
+        type="button"
+        onClick={onAdd}
+        className="w-40 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 shadow-sm flex items-center justify-center py-8"
+        title="Add photos"
+      >
+        <div className="text-3xl leading-none text-gray-400">+</div>
+      </button>
+    );
+  }
+
+  return (
+    <div className="relative inline-block">
+      {stackedFile && (
+        <div
+          className="absolute left-2 top-2 w-40 rounded-md bg-white border overflow-hidden opacity-70 pointer-events-none -z-0"
+          style={h ? { height: h } : undefined}
+        >
+          <MiniPreview fileRef={stackedFile} forceHeightPx={h || undefined} />
+        </div>
+      )}
+
+      <LongPressShare fileRef={primaryFile} onDelete={onDelete}>
+        <div
+          className="inline-block w-40 cursor-pointer"
+          onClick={onOpen}
+          role="button"
+          tabIndex={0}
+          title="Tap to preview • long-press for menu"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(); }
+          }}
+          style={h ? { height: h } : undefined}
+        >
+          <MiniPreview fileRef={primaryFile} forceHeightPx={h || undefined} />
+        </div>
+      </LongPressShare>
+    </div>
+  );
+}
 
 // --- pdf.js (UMD) one-time loader ---
 let _pdfjsPromise = null;
