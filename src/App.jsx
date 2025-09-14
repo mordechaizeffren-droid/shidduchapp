@@ -359,7 +359,7 @@ function useFilePreview(fileRef) {
   return url;
 }
 
-// --- MiniPreview (portrait tile: PDFs contain, Images cover) ---
+// --- MiniPreview (width-lock: width fixed by parent, height auto by content) ---
 function MiniPreview({ fileRef }) {
   const url = useFilePreview(fileRef);
   const type = (fileRef?.type || "").toLowerCase();
@@ -380,7 +380,7 @@ function MiniPreview({ fileRef }) {
         setLoading(true);
         const pdfjs = await loadPdfjs();
 
-        // cached blob → AB, else signed URL
+        // Prefer cached blob → ArrayBuffer; else signed URL
         let ab = null;
         try {
           const blob = await dbFiles.getItem(fileRef.id);
@@ -392,23 +392,23 @@ function MiniPreview({ fileRef }) {
         if (cancelled) return;
         const page = await doc.getPage(1);
 
-        // Render ~160px tall (since our tile is taller than wide)
-        const targetH = 160; // Tailwind h-40 = 160px
+        // Render around the parent’s typical width (~160px for w-40); CSS will scale down/up as needed.
+        const targetW = 160;
         const v1 = page.getViewport({ scale: 1 });
         const dpr = Math.max(1, window.devicePixelRatio || 1);
-        const scale = (targetH / v1.height) * dpr;
+        const scale = (targetW / v1.width) * dpr;
         const viewport = page.getViewport({ scale });
 
         const canvas = document.createElement("canvas");
         const ctx = canvas.getContext("2d", { alpha: false });
-        canvas.width = Math.floor(viewport.width);
-        canvas.height = Math.floor(viewport.height);
+        canvas.width = Math.max(1, Math.floor(viewport.width));
+        canvas.height = Math.max(1, Math.floor(viewport.height));
         await page.render({ canvasContext: ctx, viewport }).promise;
         if (cancelled) return;
 
         setPdfThumb(canvas.toDataURL("image/png"));
       } catch {
-        // fallback to icon
+        // fall through
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -419,37 +419,41 @@ function MiniPreview({ fileRef }) {
 
   if (!fileRef) return null;
 
-  // PORTRAIT TILE: w-28 h-40 (page-shaped)
+  // WIDTH-LOCK: parent sets width (e.g., w-40). We never set a fixed height here.
   return (
-    <div className="w-28 h-40 rounded-md bg-white border overflow-hidden relative flex items-center justify-center">
+    <div className="w-full rounded-md bg-white border overflow-hidden relative">
       {loading && <div className="absolute inset-0 animate-pulse bg-gray-100" />}
 
-      {/* Photos: fill box (may crop) */}
+      {/* Images — scale by width; height auto; keep proportions (no crop) */}
       {isImg && url && (
         <img
           src={url}
           alt={fileRef.name || "image"}
-          className="w-full h-full object-cover select-none"
+          className="block w-full h-auto object-contain select-none"
           draggable={false}
         />
       )}
 
-      {/* PDFs: mini full page, no outer bars (box matches page aspect) */}
+      {/* PDFs — first page thumbnail; scale by width; height auto (mini full page) */}
       {isPdf && pdfThumb && (
         <img
           src={pdfThumb}
           alt={fileRef.name || "PDF"}
-          className="w-full h-full object-contain bg-white select-none"
+          className="block w-full h-auto object-contain bg-white select-none"
           draggable={false}
         />
       )}
 
-      {/* Fallbacks */}
+      {/* Fallback for other types or PDF render failure */}
       {!isImg && !isPdf && !loading && (
-        <div className="text-3xl text-gray-400">📄</div>
+        <div className="w-full py-10 flex items-center justify-center text-3xl text-gray-400">
+          📄
+        </div>
       )}
       {isPdf && !pdfThumb && !loading && (
-        <div className="text-3xl text-gray-400">📄</div>
+        <div className="w-full py-10 flex items-center justify-center text-3xl text-gray-400">
+          📄
+        </div>
       )}
     </div>
   );
@@ -1494,43 +1498,38 @@ function Prospects({
   };
 
   const addProfile = () => {
-  const k = { id: uid(), name:'', photos:[], resume:null, blurb:'', updatedAt: Date.now() };
-  saveProfile({ ...(profile||{}), profiles:[...profiles, k], updatedAt: Date.now() });
-  setActiveProfileId(k.id);
-};
+    const k = { id: uid(), name:'', photos:[], resume:null, blurb:'', updatedAt: Date.now() };
+    saveProfile({ ...(profile||{}), profiles:[...profiles, k], updatedAt: Date.now() });
+    setActiveProfileId(k.id);
+  };
+  const addProspect = () => {
+    if(!profiles.length){ alert('Add a profile first'); return; }
+    const p={ id:uid(), profileId:activeProfileId||profiles[0].id, fullName:'', status:'New', sourceName:'', sourceTrust:'', city:'', notes:'', photos:[], resume:null, updatedAt:Date.now() };
+    setProspects([...safe,p]);
+  };
+  const updateP = (id, patch) => setProspects(safe.map(x => x.id===id ? { ...x, ...patch, updatedAt: Date.now() } : x));
+  const removeP = async (id) => {
+    const ok = await askConfirm(); if (!ok) return;
+    const p = safe.find(x=>x.id===id);
+    try {
+      if (p?.resume) await deleteFileRef(p.resume);
+      for (const ph of ensureArray(p?.photos)) await deleteFileRef(ph);
+    } catch {}
+    setProspects(safe.filter(x=>x.id!==id));
+  };
 
-const updateP = (id, patch) =>
-  setProspects(safe.map(x => x.id === id ? { ...x, ...patch, updatedAt: Date.now() } : x));
-
-const removeP = async (id) => {
-  const ok = await askConfirm(); if (!ok) return;
-  const p = safe.find(x => x.id === id);
-  try {
-    if (p?.resume) await deleteFileRef(p.resume);
-    for (const ph of ensureArray(p?.photos)) await deleteFileRef(ph);
-  } catch {}
-  setProspects(safe.filter(x => x.id !== id));
-};
-
-const onDropFiles = async (pid, files, into='auto') => {
-  if (!files || !files.length) return;
-  for (const f of Array.from(files)) {
-    const ref = await attachFile(f); if (!ref) continue;
-    if (into === 'resume') {
-      updateP(pid, { resume: ref });
-    } else if (into === 'photos') {
-      const prev = safe.find(x => x.id === pid)?.photos || [];
-      updateP(pid, { photos: [ ...prev, ref ] });
-    } else {
-      if ((f.type || '').startsWith('image/')) {
-        const prev = safe.find(x => x.id === pid)?.photos || [];
-        updateP(pid, { photos: [ ...prev, ref ] });
-      } else {
-        updateP(pid, { resume: ref });
+  const onDropFiles = async (pid, files, into='auto') => {
+    if(!files||!files.length) return;
+    for(const f of Array.from(files)){
+      const ref=await attachFile(f); if(!ref) continue;
+      if(into==='resume'){ updateP(pid,{resume:ref}); }
+      else if(into==='photos'){ updateP(pid,{photos:[...(safe.find(x=>x.id===pid)?.photos||[]), ref]}); }
+      else {
+        if((f.type||'').startsWith('image/')) updateP(pid,{photos:[...(safe.find(x=>x.id===pid)?.photos||[]), ref]});
+        else updateP(pid,{resume:ref});
       }
     }
-  }
-};
+  };
 
   const filtered = safe
     .filter(p=>!activeProfileId || p.profileId===activeProfileId)
@@ -2174,7 +2173,7 @@ useAutosize(blurbRef, selected?.blurb);
   const [menu,setMenu]=useState({open:false,profileId:'',x:0,y:0});
   const { ask: askConfirm, Confirm } = useConfirm();
   const menuRef=useRef(null);
-  useEffect(()=>{ if(!menu.open) return; const close=(e)=>{ if(menuRef.current && !menuRef.current.contains(e.target)) setMenu(s=>({ ...s, open:false })) document.addEventListener('pointerdown', close, true); return ()=>document.removeEventListener('pointerdown', close, true); },[menu.open]);
+  useEffect(()=>{ if(!menu.open) return; const close=(e)=>{ if(menuRef.current && !menuRef.current.contains(e.target)) setMenu(s=>({...s,open:false})); }; document.addEventListener('pointerdown', close, true); return ()=>document.removeEventListener('pointerdown', close, true); },[menu.open]);
   const lpRef=useRef(null);
   const startLP=(el,id)=>{ clearTimeout(lpRef.current); lpRef.current=setTimeout(()=>{ const r=el?.getBoundingClientRect?.(); if(!r) return; setMenu({open:true,profileId:id,x:r.left+r.width/2,y:r.bottom+8}); },500); };
   const cancelLP=()=> clearTimeout(lpRef.current);
@@ -2184,10 +2183,7 @@ useAutosize(blurbRef, selected?.blurb);
       if (prof?.resume) await deleteFileRef(prof.resume);
       for (const ph of ensureArray(prof?.photos)) await deleteFileRef(ph);
     } catch {}
-    const next = profiles.filter(k => k.id !== id);
-saveProfile({ ...(profile || {}), profiles: next, updatedAt: Date.now() });
-if (selId === id) setSelId(next[0]?.id || '');
-setMenu(s => ({ ...s, open: false }));
+    const next=profiles.filter(k=>k.id!==id); saveProfile({ ...(profile||{}), profiles:next, updatedAt:Date.now() }); if(selId===id) setSelId(next[0]?.id||''); setMenu(s=>({...s,open:false})); };
 
   return (
     <div className="space-y-4">
@@ -2213,163 +2209,145 @@ setMenu(s => ({ ...s, open: false }));
       {selected ? (
         <>
           <div className="grid grid-cols-2 gap-2">
-   {/* Resume — fixed tile (uses MiniPreview size directly) */}
+    {/* Resume — simplified (now with Delete via long-press) */}
 <div>
   <div className="text-xs mb-1">Resume</div>
 
   {selected.resume ? (
-    <LongPressShare
-      fileRef={selected.resume}
-      onDelete={async () => {
-        const ok = await askConfirm(); if (!ok) return;
-        try { if (selected.resume) await deleteFileRef(selected.resume); } catch {}
-        updateProfile(selected.id, { resume: null });
-      }}
-    >
-     <div
-  className="inline-block w-40 h-28 cursor-pointer"
-  onClick={() => {
-    setViewerFile(selected.resume);
-    setViewerPhotos([]);
-    setViewerIndex(0);
-  }}
-  role="button"
-  tabIndex={0}
-  onKeyDown={(e) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      setViewerFile(selected.resume);
-      setViewerPhotos([]);
-      setViewerIndex(0);
-    }
-  }}
-  title="Tap to view • long-press for menu"
-<div
-  className="inline-block w-28 h-40 cursor-pointer"
-  onClick={() => {
-    setViewerFile(selected.resume);
-    setViewerPhotos([]);
-    setViewerIndex(0);
-  }}
-  role="button"
-  tabIndex={0}
-  title="Tap to view • long-press for menu"
-  onKeyDown={(e) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      setViewerFile(selected.resume);
-      setViewerPhotos([]);
-      setViewerIndex(0);
-    }
-  }}
->
-  <MiniPreview fileRef={selected.resume} />
-</div>
-
-    </LongPressShare>
+    <>
+      <LongPressShare
+        fileRef={selected.resume}
+        onDelete={async () => {
+          const ok = await askConfirm(); if (!ok) return;
+          try { if (selected.resume) await deleteFileRef(selected.resume); } catch {}
+          updateProfile(selected.id, { resume: null });
+        }}
+      >
+        <div
+          className="group cursor-pointer inline-block"
+          onClick={() => {
+            setViewerFile(selected.resume);
+            setViewerPhotos([]);
+            setViewerIndex(0);
+          }}
+          title="Tap to view • long-press for menu"
+        >
+          <div className="w-40">
+            <MiniPreview fileRef={selected.resume} />
+          </div>
+        </div>
+      </LongPressShare>
+    </>
   ) : (
     <button
-  type="button"
-  onClick={() => document.getElementById(`profile-photos-${selected.id}`)?.click()}
-  className="w-28 h-40 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 shadow-sm flex items-center justify-center"
->
-  <div className="text-3xl leading-none text-gray-400">+</div>
-</button>
-<input
-  id={`profile-photos-${selected.id}`}
-  type="file"
-  accept="image/*"
-  multiple
-  className="hidden"
-  onChange={async (e) => {
-    const fs = Array.from(e.target.files || []);
-    if (fs.length) {
-      const refs = [];
-      for (const f of fs) refs.push(await attachFile(f));
-      updateProfile(selected.id, { photos: [ ...(selected.photos || []), ...refs ] });
-    }
-    e.target.value = "";
-  }}
-/>
-
+      type="button"
+      onClick={() => document.getElementById(`profile-resume-${selected.id}`)?.click()}
+      className="h-28 w-40 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 shadow-sm flex flex-col items-center justify-center"
+    >
+      <div className="text-3xl leading-none text-gray-400">+</div>
+      <div className="text-xs text-gray-500 mt-1">Add resume</div>
+      <input
+        id={`profile-resume-${selected.id}`}
+        type="file"
+        accept="*/*"
+        className="hidden"
+        onChange={async (e) => {
+          const f = e.target.files?.[0];
+          if (f) {
+            const ref = await attachFile(f);
+            updateProfile(selected.id, { resume: ref });
+          }
+          e.target.value = "";
+        }}
+      />
     </button>
   )}
 </div>
-
-{/* Photos (uniform tile; images same size as Resume) */}
+  
+   {/* Photos (now with Delete via long-press, width-locked thumbnails) */}
 <div>
   <div className="text-xs mb-1">Photos</div>
 
   <div className="relative inline-block">
     {selected.photos?.[1] && (
-      <div className="absolute left-2 top-2 w-40 h-28 rounded-md bg-white border overflow-hidden opacity-70 pointer-events-none -z-0">
+      <div className="absolute left-2 top-2 w-40 rounded-md bg-white border overflow-hidden opacity-70 pointer-events-none -z-0">
         <MiniPreview fileRef={selected.photos[1]} />
       </div>
     )}
 
     {selected.photos?.[0] ? (
-    <LongPressShare
-  fileRef={selected.photos[0]}
-  onDelete={async () => {
-    const ok = await askConfirm(); if (!ok) return;
-    const next = (selected.photos || []).slice(1);
-    try { await deleteFileRef(selected.photos[0]); } catch {}
-    updateProfile(selected.id, { photos: next });
-  }}
->
-  <div
-    className="inline-block w-28 h-40 cursor-pointer"
-    onClick={() => {
-      setViewerPhotos(selected.photos || []);
-      setViewerIndex(0);
-      setViewerFile(selected.photos?.[0]);
-    }}
-    role="button"
-    tabIndex={0}
-    title="Tap to preview • long-press for menu"
-    onKeyDown={(e) => {
-      if (e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault();
-        setViewerPhotos(selected.photos || []);
-        setViewerIndex(0);
-        setViewerFile(selected.photos?.[0]);
-      }
-    }}
-  >
-    <MiniPreview fileRef={selected.photos[0]} />
-  </div>
-</LongPressShare>
+      <div className="relative z-10">
+        <LongPressShare
+          fileRef={selected.photos[0]}
+          onDelete={async () => {
+            const ok = await askConfirm(); if (!ok) return;
+            const next = (selected.photos || []).slice(1);
+            try { await deleteFileRef(selected.photos[0]); } catch {}
+            updateProfile(selected.id, { photos: next });
+          }}
+        >
+          <div
+            className="w-40 rounded-md bg-white border overflow-hidden cursor-pointer"
+            onClick={() => {
+              setViewerPhotos(selected.photos || []);
+              setViewerIndex(0);
+              setViewerFile(selected.photos?.[0]);
+            }}
+            role="button"
+            tabIndex={0}
+            title="Tap to preview • long-press for menu"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                setViewerPhotos(selected.photos || []);
+                setViewerIndex(0);
+                setViewerFile(selected.photos?.[0]);
+              }
+            }}
+          >
+            {/* MiniPreview itself locks by width; height auto-scales */}
+            <MiniPreview fileRef={selected.photos[0]} />
+          </div>
+        </LongPressShare>
 
+        {/* small add button */}
+        <button
+          type="button"
+          onClick={() => document.getElementById(`profile-photos-${selected.id}`)?.click()}
+          className="absolute -bottom-3 -right-3 z-20 w-8 h-8 rounded-full border bg-white shadow flex items-center justify-center"
+          title="Add photo"
+        >+</button>
+      </div>
     ) : (
       <button
         type="button"
         onClick={() => document.getElementById(`profile-photos-${selected.id}`)?.click()}
-        className="w-40 h-28 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 shadow-sm flex items-center justify-center"
+        className="w-40 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 shadow-sm flex flex-col items-center justify-center py-8"
       >
         <div className="text-3xl leading-none text-gray-400">+</div>
+        <div className="text-[11px] text-gray-500 mt-1">Add photos</div>
       </button>
     )}
 
     <input
-  id={`profile-photos-${selected.id}`}
-  type="file"
-  accept="image/*"
-  multiple
-  className="hidden"
-  onChange={async (e) => {
-    const fs = Array.from(e.target.files || []);
-    if (fs.length) {
-      const refs = [];
-      for (const f of fs) refs.push(await attachFile(f));
-      updateProfile(selected.id, { photos: [ ...(selected.photos || []), ...refs ] });
-    }
-    e.target.value = "";
-  }}
-/>
+      id={`profile-photos-${selected.id}`}
+      type="file"
+      accept="image/*"
+      multiple
+      className="hidden"
+      onChange={async (e) => {
+        const fs = Array.from(e.target.files || []);
+        if (fs.length) {
+          const refs = [];
+          for (const f of fs) refs.push(await attachFile(f));
+          updateProfile(selected.id, { photos: [...(selected.photos || []), ...refs] });
+        }
+        e.target.value = "";
+      }}
+    />
   </div>
 </div>
-
- 
+         
            {viewerFile && (
   <Viewer
     fileRef={viewerFile}
