@@ -1809,18 +1809,7 @@ function FullProspectEditor({ prospect, allProfiles, onChange, onClose, onDelete
   const { ask: askConfirm, Confirm } = useConfirm();
 const notesRef = React.useRef(null);
 useAutosize(notesRef, p.notes);
-// === Match photo mini height to resume mini ===
-const [resumeH, setResumeH] = React.useState(0);
-React.useEffect(() => {
-  const el = document.getElementById(`prospect-resume-box-${p.id}`);
-  if (!el) return;
-  const apply = () => setResumeH(el.offsetHeight || 0);
-  apply();
-  const ro = new ResizeObserver(apply);
-  ro.observe(el);
-  window.addEventListener('load', apply);
-  return () => { ro.disconnect(); window.removeEventListener('load', apply); };
-}, [p.id, p.resume]);
+
 
   // swipe-down to close
   const [drag, setDrag] = React.useState({ active:false, startX:0, startY:0, dx:0, dy:0 });
@@ -1939,9 +1928,9 @@ React.useEffect(() => {
           }}
           title="Tap to view • long-press for menu"
         >
-          <div id={`prospect-resume-box-${p.id}`} className="w-40">
-  <MiniPreview fileRef={p.resume} />
-</div>
+          <div className="w-40">
+            <MiniPreview fileRef={p.resume} />
+          </div>
         </div>
       </LongPressShare>
     ) : (
@@ -1976,11 +1965,8 @@ React.useEffect(() => {
 
     <div className="relative inline-block">
       {p.photos?.[1] && (
-        <div
-  className="absolute left-2 top-2 w-40 h-28 rounded-md bg-white border overflow-hidden opacity-70 pointer-events-none -z-0"
-   style={resumeH ? { height: `${resumeH}px` } : undefined}
- >
-   <MiniPreview fileRef={p.photos[1]} forceHeightPx={resumeH || undefined} />
+        <div className="absolute left-2 top-2 w-40 h-28 rounded-md bg-white border overflow-hidden opacity-70 pointer-events-none -z-0">
+          <MiniPreview fileRef={p.photos[1]} />
         </div>
       )}
 
@@ -2004,7 +1990,7 @@ React.useEffect(() => {
               }}
               title="Tap to preview • long-press for menu"
             >
-              <MiniPreview fileRef={p.photos[0]} forceHeightPx={resumeH || undefined} />
+              <MiniPreview fileRef={p.photos[0]} />
             </div>
           </LongPressShare>
 
@@ -2020,14 +2006,13 @@ React.useEffect(() => {
         </div>
       ) : (
         <button
-  type="button"
-  onClick={() => document.getElementById(`prospect-photos-${p.id}`)?.click()}
-  className="w-40 border-2 border-dashed border-gray-300 rounded-md bg-white hover:bg-gray-50 shadow-sm flex flex-col items-center justify-center"
-  style={resumeH ? { height: `${resumeH}px` } : undefined}
->
-  <div className="text-3xl leading-none text-gray-400">+</div>
-  <div className="text-[11px] text-gray-500 mt-1">Add photos</div>
-</button>
+          type="button"
+          onClick={() => document.getElementById(`prospect-photos-${p.id}`)?.click()}
+          className="h-28 w-40 border-2 border-dashed border-gray-300 rounded-lg bg-white hover:bg-gray-50 shadow-sm flex flex-col items-center justify-center"
+        >
+          <div className="text-3xl leading-none text-gray-400">+</div>
+          <div className="text-[11px] text-gray-500 mt-1">Add photos</div>
+        </button>
       )}
       <input
         id={`prospect-photos-${p.id}`}
@@ -2246,7 +2231,7 @@ useAutosize(blurbRef, selected?.blurb);
           }}
           title="Tap to view • long-press for menu"
         >
-          <div id={`prospect-resume-box-${p.id}`} className="w-40">
+          <div className="w-40">
             <MiniPreview fileRef={selected.resume} />
           </div>
         </div>
