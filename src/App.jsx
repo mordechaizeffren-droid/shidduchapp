@@ -1855,7 +1855,7 @@ useAutosize(notesRef, p.notes);
   role="dialog"
   aria-label="Edit prospect"
 >
-      <div className="w-full max-w-3xl mx-auto">
+      <div className="w-full max-w-3xl mx-auto min-h-screen">
         {/* grab handle + header */}
         <div className="sticky top-0 z-10 bg-white/95 backdrop-blur border-b">
           <div className="h-5 flex items-center justify-center">
@@ -1867,17 +1867,28 @@ useAutosize(notesRef, p.notes);
               placeholder="name..."
               onChange={(v)=>onChange({ fullName: v })}
               className="font-medium text-base truncate"
-              inputClass="font-medium border rounded px-2 py-1 select-text"
+              inputClass="font-medium border rounded px-2 py-1 select-text text-[16px]"
             />
             <div className="ml-auto flex items-center gap-2">
               <button className="px-3 py-1 rounded-full border text-xs"
                       onClick={async()=>{ const ok=await askConfirm(); if(!ok) return; await onDelete?.(); }}>
                 Delete
               </button>
-              <button className="px-3 py-1 rounded-full border text-xs" onClick={onClose}>Done</button>
-            </div>
-          </div>
-        </div>
+<button
+          type="button"
+          className="px-3 py-1 rounded-full border text-xs"
+          onClick={() => {
+            try { const el = document.activeElement; if (el && typeof el.blur === 'function') el.blur(); } catch {}
+            document.body.style.removeProperty('overflow');
+            document.documentElement.style.removeProperty('overflow');
+            onClose();
+          }}
+        >
+          Done
+        </button>
+      </div>
+    </div>
+  </div>
 
         {/* content */}
         <div className="p-3 space-y-3">
@@ -2039,7 +2050,7 @@ useAutosize(notesRef, p.notes);
   <div className="relative">
     <textarea
       ref={notesRef}
-      className="border rounded p-2 w-full text-xs select-text placeholder-gray-400 resize-none overflow-hidden"
+      className="border rounded p-2 w-full text-[16px] leading-tight select-text placeholder-gray-400 resize-none overflow-hidden"
       rows={2}
       value={p.notes || ''}
       onChange={(e) => onChange({ notes: e.target.value })}
@@ -2125,7 +2136,7 @@ function InlinePill({ label, placeholder='...', onEdit, full=false }){
   const [editing,setEditing]=useState(false); const [val,setVal]=useState(label||'');
   useEffect(()=>setVal(label||''),[label]); const commit=()=>{ onEdit((val||'').trim()); setEditing(false); };
   return editing? (
-    <input className={`border rounded-full px-3 py-1 text-sm ${full?'w-full':''} select-text`} autoFocus value={val} onChange={e=>setVal(e.target.value)} placeholder={placeholder} onKeyDown={e=>{ if(e.key==='Enter') commit(); if(e.key==='Escape') setEditing(false); }} onBlur={commit}/>
+    <input className={`border rounded-full px-3 py-1 text-[16px] leading-tight ${full?'w-full':''} select-text`} autoFocus value={val} onChange={e=>setVal(e.target.value)} placeholder={placeholder} onKeyDown={e=>{ if(e.key==='Enter') commit(); if(e.key==='Escape') setEditing(false); }} onBlur={commit}/>
   ) : (
     <span className={`px-3 py-2 rounded-full text-sm font-medium border ${label?'bg-gray-100 border-gray-200':'bg-white text-gray-400'} ${full?'w-full text-left inline-block':''} min-h-[36px]`} title="Tap to edit" onClick={()=>setEditing(true)}>{label||placeholder}</span>
   );
@@ -2390,7 +2401,7 @@ useAutosize(blurbRef, selected?.blurb);
 
 <textarea
   ref={blurbRef}
-  className="border rounded p-2 w-full text-xs select-text placeholder-gray-400 resize-none overflow-hidden"
+  className="border rounded p-2 w-full text-[16px] leading-tight select-text placeholder-gray-400 resize-none overflow-hidden"
   rows={2}
   value={selected.blurb || ''}
   onChange={(e)=>updateProfile(selected.id, {blurb:e.target.value})}
