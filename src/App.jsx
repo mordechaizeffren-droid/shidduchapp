@@ -1850,8 +1850,8 @@ useAutosize(notesRef, p.notes);
   })();
 
   return (
-   <div
-  className="fixed inset-0 z-[3500] bg-white flex items-start justify-center p-0"
+  <div
+  className="fixed inset-0 z-[3500] bg-white flex items-start justify-center p-0 overflow-y-auto overscroll-contain touch-pan-y"
   role="dialog"
   aria-label="Edit prospect"
 >
